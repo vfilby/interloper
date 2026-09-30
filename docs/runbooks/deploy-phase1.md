@@ -76,14 +76,18 @@ pbpaste | ssh vfilby@192.0.2.12 'umask 077; cat > ~/wga-staging/pushover-token'
 pbpaste | ssh vfilby@192.0.2.12 'umask 077; cat > ~/wga-staging/pushover-user'
 
 # 3c. Mint the approver's Warpgate token. wg-apply asks for the Warpgate admin username, password and one-time code;
-#     the token goes straight into the pipe.
-wg-apply --mint-token approver | ssh vfilby@192.0.2.12 'umask 077; cat > ~/wga-staging/warpgate-token'
+#     the token goes straight into the pipe. --replace deletes any older approver token once the new one is handed
+#     over (needs fnet-infrastructure f3f0ef7 or later: git -C ~/Projects/fnet-infrastructure pull).
+wg-apply --mint-token approver --replace | ssh vfilby@192.0.2.12 'umask 077; cat > ~/wga-staging/warpgate-token'
 
 # 3d. Clear the clipboard.
 pbcopy < /dev/null
 ```
 
-3c should end with `API token for approver minted, expires ...` and `temporary password deleted from approver`.
+3c should end with `API token for approver minted, expires ...`, `token handed to the pipe ...`, possibly
+`older token of approver deleted: ...`, and `temporary password deleted from approver`. If it says **could not hand
+the token over**, the `ssh ... cat` part failed first (its own error is printed above, usually "No such file or
+directory" because step 2 was skipped): the new token was already deleted again, so fix that and rerun 3c.
 
 ### 4. Run the installer (interloper)
 
