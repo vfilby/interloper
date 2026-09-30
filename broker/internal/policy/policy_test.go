@@ -1,0 +1,54 @@
+package policy
+
+import (
+	"testing"
+	"time"
+)
+
+func TestEvaluate(t *testing.T) {
+	now := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
+	p := Policy{
+		Requesters:  map[string]bool{"claude": true, "maggy": true},
+		MaxDuration: map[Tier]time.Duration{TierRW: 2 * time.Hour, TierAdmin: 30 * time.Minute},
+		TTL:         15 * time.Minute,
+	}
+	dur := func(d time.Duration) *time.Duration { return &d }
+	cases := []struct {
+		name   string
+		req    Request
+		deny   bool
+		reason string
+		host   string
+		tier   Tier
+	}{
+		{"ok rw", Request{"claude", "forge-01-rw", dur(2 * time.Hour), now}, false, "", "forge-01", TierRW},
+		{"ok admin", Request{"maggy", "home-admin", dur(30 * time.Minute), now.Add(-14 * time.Minute)}, false, "", "home", TierAdmin},
+		{"unknown user", Request{"", "home-rw", dur(time.Hour), now}, true, "requester is not a Warpgate user", "home", TierRW},
+		{"not allowed", Request{"jeeves", "home-rw", dur(time.Hour), now}, true, "jeeves may not ask for tickets", "home", TierRW},
+		{"unknown target", Request{"claude", "", dur(time.Hour), now}, true, "target is not a Warpgate target", "", ""},
+		{"ro tier", Request{"claude", "home-ro", dur(time.Hour), now}, true, "home-ro is not an rw or admin tier", "home-ro", ""},
+		{"own target", Request{"claude", "home", dur(time.Hour), now}, true, "home is not an rw or admin tier", "home", ""},
+		{"bare suffix", Request{"claude", "-rw", dur(time.Hour), now}, true, "-rw is not an rw or admin tier", "-rw", ""},
+		{"no duration", Request{"claude", "home-rw", nil, now}, true, "no duration: the ticket would never expire", "home", TierRW},
+		{"over cap", Request{"claude", "n-admin", dur(2 * time.Hour), now}, true, "asks for 2h, over the 30m cap for admin", "n", TierAdmin},
+		{"expired", Request{"claude", "n-rw", dur(time.Hour), now.Add(-16 * time.Minute)}, true, "unanswered for more than 15m", "n", TierRW},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			v := p.Evaluate(c.req, now)
+			if v.Deny != c.deny || v.Reason != c.reason || v.Host != c.host || v.Tier != c.tier {
+				t.Errorf("got %+v, want deny=%v reason=%q host=%q tier=%q", v, c.deny, c.reason, c.host, c.tier)
+			}
+		})
+	}
+}
+
+func TestHuman(t *testing.T) {
+	for d, want := range map[time.Duration]string{
+		2 * time.Hour: "2h", 90 * time.Minute: "1h30m", 15 * time.Minute: "15m", 45 * time.Second: "45s", 720 * time.Hour: "720h",
+	} {
+		if got := Human(d); got != want {
+			t.Errorf("Human(%v) = %q, want %q", d, got, want)
+		}
+	}
+}
