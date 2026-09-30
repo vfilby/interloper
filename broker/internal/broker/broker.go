@@ -111,13 +111,14 @@ func (b *Broker) Run(ctx context.Context, interval time.Duration) {
 	}
 }
 
-// Tick is one poll. Exported for tests and for `broker -once`.
-func (b *Broker) Tick(ctx context.Context, now time.Time) {
+// Tick is one poll. Exported for tests and for `broker -once`. The error says the poll or a name lookup failed
+// (already logged and handled); Run ignores it, -once reports it.
+func (b *Broker) Tick(ctx context.Context, now time.Time) error {
 	b.checkToken(ctx, now)
 	pending, err := b.wg.PendingRequests(ctx)
 	if err != nil {
 		b.pollFailed(ctx, now, err)
-		return
+		return err
 	}
 	b.pollOK(ctx, now)
 	namesOK := b.resolveNames(ctx, pending)
@@ -145,6 +146,10 @@ func (b *Broker) Tick(ctx context.Context, now time.Time) {
 		}
 	}
 	b.saveState()
+	if !namesOK {
+		return errors.New("listing Warpgate users or targets failed")
+	}
+	return nil
 }
 
 func (b *Broker) handle(ctx context.Context, now time.Time, r warpgate.TicketRequest, e *entry) {
