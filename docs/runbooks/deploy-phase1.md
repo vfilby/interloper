@@ -7,8 +7,7 @@ Each step says **where** its commands run:
 - **Mac**: a terminal on your Mac (fish is fine; every command below works in fish).
 - **interloper**: after `ssh -t vfilby@192.0.2.12`, your own port-22 login on the bastion.
 
-The checkout used below is `REPO=/Users/you/Projects/warpgate-approver/.claude/worktrees/phase1-broker`
-(branch `worktree-phase1-broker`). If you merged that branch into `~/Projects/warpgate-approver`, use that instead.
+All Mac commands run in your checkout, `~/Projects/warpgate-approver` (branch `main`).
 
 ## What gets installed
 
@@ -41,7 +40,7 @@ The checkout used below is `REPO=/Users/you/Projects/warpgate-approver/.claude/w
 ### 1. Build (Mac)
 
 ```fish
-cd /Users/you/Projects/warpgate-approver/.claude/worktrees/phase1-broker
+cd ~/Projects/warpgate-approver
 make dist
 ```
 
