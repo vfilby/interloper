@@ -1,0 +1,32 @@
+# /opt/warpgate-approver on interloper. Its own compose project: restarting it never touches Warpgate.
+# Secrets are root-provisioned files owned by 65532 (the container user), mode 0400, mounted read-only.
+name: warpgate-approver
+
+services:
+  broker:
+    build: .
+    image: warpgate-approver-broker:local
+    restart: unless-stopped
+    user: "65532:65532"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 64m
+    pids_limit: 64
+    environment:
+      TZ: America/Los_Angeles
+      WARPGATE_URL: https://interloper.home.example
+      # report: notify and flag what the policy would deny, deny nothing. Switch to enforce once trusted.
+      POLICY_MODE: report
+      ALLOWED_REQUESTERS: claude,maggy
+      MAX_DURATION_RW: 2h
+      MAX_DURATION_ADMIN: 2h
+      REQUEST_TTL: 15m
+    volumes:
+      - ./data:/data
+      - ./secrets/warpgate-token:/run/secrets/warpgate-token:ro
+      - ./secrets/pushover-token:/run/secrets/pushover-token:ro
+      - ./secrets/pushover-user:/run/secrets/pushover-user:ro
+    logging:
+      driver: json-file
+      options: {max-size: "5m", max-file: "3"}

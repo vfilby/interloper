@@ -4,7 +4,8 @@ Approve or deny Warpgate ticket requests from an iPhone, securely, on or off the
 
 > "Claude needs RW access to forge-01 to accomplish task X" → Face ID → Approve.
 
-Status: design (2026-09-30). Warpgate side ready to apply (`fnet-infrastructure` 571ba88); nothing else built.
+Status (2026-09-30): Warpgate side applied (`fnet-infrastructure` 571ba88, `wg-apply --plan` clean). Phase 1 broker
+built (`broker/`, runbook `docs/runbooks/deploy-phase1.md`), not deployed yet.
 
 ## Decisions
 
@@ -84,8 +85,15 @@ the internet) is untrusted and can at most drop or delay messages. Everything fa
   - request **still Pending** in Warpgate with the same target/requester/duration.
 
   Then approve/deny.
-- State (devices, nonces, sent records, audit log) in SQLite on a volume; the audit log is append-only.
-- Go; `GOMEMLIMIT` ≈ 64 MiB, container limit 128 MiB, no unbounded in-memory caches.
+- State: phase 1 keeps a JSON file (pending requests only) and an append-only JSONL audit log, standard library
+  only. SQLite comes in phase 3, when devices and single-use nonces need it.
+- Go; `GOMEMLIMIT` 32 MiB, container limit 64 MiB, no unbounded in-memory caches.
+- `report` mode first (flags what the policy would deny, denies nothing), then `enforce`.
+- A failed user/target lookup never becomes a denial: such requests wait for the next poll.
+- Duration caps default to 2 h for both tiers because `cssh` asks for 2 h everywhere; lowering the admin cap
+  means changing `cssh` at the same time.
+- The approver token can also read Warpgate's user and target lists (0.28.6 allows any admin role); the broker needs
+  them because a TicketRequest carries ids only.
 
 ### 2. iOS app
 
