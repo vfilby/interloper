@@ -111,7 +111,10 @@ func run(log *slog.Logger, once, check bool) error {
 		"cap_rw", cfg.Policy.MaxDuration[policy.TierRW].String(), "cap_admin", cfg.Policy.MaxDuration[policy.TierAdmin].String(),
 		"ttl", cfg.Policy.TTL.String())
 	if once {
-		b.Tick(ctx, time.Now())
+		if err := b.Tick(ctx, time.Now()); err != nil {
+			return fmt.Errorf("poll failed: %w", err)
+		}
+		log.Info("poll ok")
 		return nil
 	}
 	b.Run(ctx, interval)

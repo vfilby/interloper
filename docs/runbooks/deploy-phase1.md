@@ -1,112 +1,164 @@
 # Deploy phase 1: broker + Pushover on bastion
 
-The person runs all of this. Claude has no login on bastion, by design: the broker's Warpgate token can approve
-any pending request, and bastion is the one host no agent can reach.
+You run all of this. Claude has no login on bastion, by design: the broker's Warpgate token can approve any
+pending request, and bastion is the one host no agent can reach.
 
-What phase 1 does: every ~5 s it lists pending ticket requests and notifies Pushover (requester, host, tier, duration,
-and the requester's own reason, labelled as theirs). It applies the policy (allowed requesters, rw/admin tiers only,
-duration caps, 15 min expiry). In `report` mode it only flags what it would deny; in `enforce` it denies those itself.
-Approval stays in the Warpgate admin UI. It alerts when Warpgate has been unreachable for 5 min, and 30 days before
-its token expires.
+Each step says **where** its commands run:
+- **Mac**: a terminal on your Mac (fish is fine; every command below works in fish).
+- **bastion**: after `ssh -t admin@192.0.2.12`, your own port-22 login on the bastion.
 
-Layout on bastion:
+The checkout used below is `REPO=/Users/you/Projects/warpgate-approver/.claude/worktrees/phase1-broker`
+(branch `worktree-phase1-broker`). If you merged that branch into `~/Projects/warpgate-approver`, use that instead.
+
+## What gets installed
+
+`deploy/` in the repo holds everything that goes to bastion:
+
+| file in `deploy/` | what it is |
+|---|---|
+| `install.sh` | the installer; you run it with sudo on bastion (step 4) |
+| `Dockerfile` | the container image: the `broker` binary on distroless, non-root |
+| `compose.yaml` | the service definition (hardening, mounts, restart policy) |
+| `broker.env.default` | default settings; becomes `/opt/warpgate-approver/broker.env` on the first install |
+| `broker` | the program, built by `make dist` (step 1); not in git |
+
+`install.sh` puts them here:
 
 ```
-/opt/warpgate-approver/            root:root 0755
-  compose.yaml, Dockerfile         root:root 0644
-  broker                           root:root 0755  (static linux/arm64, built on the Mac)
-  secrets/                         65532:65532 0700
-    warpgate-token                 65532:65532 0400  approver user's API token
-    pushover-token                 65532:65532 0400  Pushover application token
-    pushover-user                  65532:65532 0400  Pushover user key
-  data/                            65532:65532 0700  state.json, audit.jsonl
+/opt/warpgate-approver/            root, 0755
+  Dockerfile, compose.yaml         root, 0644   replaced on every install
+  broker                           root, 0755   replaced on every install
+  broker.env                       root, 0644   your settings: created once, never overwritten
+  secrets/                         65532, 0700  (65532 = the container's user)
+    warpgate-token                 65532, 0400  the approver user's Warpgate API token
+    pushover-token                 65532, 0400  the Pushover application's API token
+    pushover-user                  65532, 0400  your Pushover user key
+  data/                            65532, 0700  state.json, audit.jsonl
 ```
 
-## 0. Pushover application (once)
+## First install
 
-On https://pushover.net/apps/build create an application `warpgate-approver`. Note its **API token**, and your
-**user key** from the Pushover dashboard.
-
-## 1. Build and stage (on the Mac)
-
-`$REPO` is the checkout holding this file.
+### 1. Build (Mac)
 
 ```fish
-cd $REPO; and make dist            # runs the tests, prints the binary's sha256
-ssh admin@192.0.2.12 'umask 077; mkdir -p ~/wga-staging/deploy'
-tar -C deploy -cf - Dockerfile compose.yaml broker | ssh admin@192.0.2.12 'tar -C ~/wga-staging/deploy -xf -'
+cd /Users/you/Projects/warpgate-approver/.claude/worktrees/phase1-broker
+make dist
 ```
 
-Secrets go through pipes into files only you can read; nothing lands in shell history or on the Mac's disk.
+You should see four `ok  warpgate-approver/broker/...` lines, then one line with a 64-character hex string followed by
+`deploy/broker`. That string is the binary's sha256. **Keep it visible**: step 4 asks you to compare it.
+
+### 2. Copy `deploy/` to bastion (Mac)
+
+This makes a private directory `~/wga-staging` in your home on bastion and copies all five files of `deploy/`
+into it. (Not straight into `/opt`: that is root's, and sudo cannot ask for a password through a pipe.)
 
 ```fish
-# copy the Pushover API token to the clipboard, then:
+ssh admin@192.0.2.12 'rm -rf ~/wga-staging && mkdir -m 700 ~/wga-staging'
+tar -C deploy -cf - install.sh Dockerfile compose.yaml broker.env.default broker | ssh admin@192.0.2.12 'tar -C ~/wga-staging -xf - && ls -l ~/wga-staging'
+```
+
+The listing should show `Dockerfile`, `broker`, `broker.env.default`, `compose.yaml` and `install.sh`.
+
+### 3. Put the three secrets next to them (Mac)
+
+First, if you have not yet: on https://pushover.net/apps/build create an application named `warpgate-approver`; its
+page shows the **API Token**. Your **User Key** is on the https://pushover.net dashboard.
+
+Each command below writes one secret into a file only you can read in `~/wga-staging`. Nothing is echoed, lands in
+shell history, or is written on the Mac.
+
+```fish
+# 3a. Copy the Pushover API Token to the clipboard, then:
 pbpaste | ssh admin@192.0.2.12 'umask 077; cat > ~/wga-staging/pushover-token'
-# copy your Pushover user key to the clipboard, then:
+
+# 3b. Copy your Pushover User Key to the clipboard, then:
 pbpaste | ssh admin@192.0.2.12 'umask 077; cat > ~/wga-staging/pushover-user'
-# the approver's Warpgate token (admin password + OTP prompt; the token goes straight into the pipe):
+
+# 3c. Mint the approver's Warpgate token. bastion-apply asks for the Warpgate admin username, password and one-time code;
+#     the token goes straight into the pipe.
 bastion-apply --mint-token approver | ssh admin@192.0.2.12 'umask 077; cat > ~/wga-staging/warpgate-token'
-pbcopy < /dev/null                 # clear the clipboard
+
+# 3d. Clear the clipboard.
+pbcopy < /dev/null
 ```
 
-## 2. Install (on bastion)
+3c should end with `API token for approver minted, expires ...` and `temporary password deleted from approver`.
+
+### 4. Run the installer (bastion)
 
 ```sh
 ssh -t admin@192.0.2.12
-sha256sum ~/wga-staging/deploy/broker          # must match what make dist printed
-sudo install -d -m 0755 -o root -g root /opt/warpgate-approver
-sudo install -d -m 0700 -o 65532 -g 65532 /opt/warpgate-approver/secrets /opt/warpgate-approver/data
-sudo install -m 0644 -o root -g root ~/wga-staging/deploy/Dockerfile ~/wga-staging/deploy/compose.yaml /opt/warpgate-approver/
-sudo install -m 0755 -o root -g root ~/wga-staging/deploy/broker /opt/warpgate-approver/
-sudo install -m 0400 -o 65532 -g 65532 ~/wga-staging/warpgate-token ~/wga-staging/pushover-token \
-  ~/wga-staging/pushover-user /opt/warpgate-approver/secrets/
-shred -u ~/wga-staging/warpgate-token ~/wga-staging/pushover-token ~/wga-staging/pushover-user
-rm -r ~/wga-staging
-
-cd /opt/warpgate-approver
-sudo docker compose build
-sudo docker compose run --rm broker -check-config     # "configuration ok"
-sudo docker compose run --rm broker -once             # one real poll; no ERROR/WARN lines expected
-sudo docker compose up -d
-sudo docker compose logs -f                           # "started", then quiet
+cd ~/wga-staging
+sudo ./install.sh
 ```
 
-## 3. Test
+The installer:
+1. shows the binary's sha256 and asks whether it matches step 1 (answer `y`);
+2. checks all three secrets are there, else stops **before changing anything**;
+3. installs the files into `/opt/warpgate-approver` with the owners and modes above, and shreds the secret copies
+   in `~/wga-staging`;
+4. builds the image, checks the configuration (`configuration ok`), and polls Warpgate once for real (`poll ok`);
+   if that poll fails it stops and does **not** start the service;
+5. starts the service and shows `docker compose ps` (state `running`).
 
-From a Claude session (or ask Claude), file two harmless requests and deny both in the admin UI afterwards:
+Then, still on bastion:
 
 ```sh
+rm -rf ~/wga-staging
+cd /opt/warpgate-approver && sudo docker compose logs -f     # a "started" line, then quiet; Ctrl-C to leave
+```
+
+### 5. Test (Mac)
+
+File two harmless requests (or ask Claude to). Each waits 60 s, then gives up; the request stays pending.
+
+```fish
 bastion-ssh-ticket ensure files-01-rw --desc "warpgate-approver phase-1 test: deny this" --timeout 60
 bastion-ssh-ticket ensure files-01-rw --duration 14400 --desc "warpgate-approver phase-1 test: over the cap" --timeout 60
 ```
 
-Expect within seconds:
-- first: "claude wants RW on n", Duration 2h, the reason quoted, and a link to the tickets page;
-- second: the same, headed "POLICY WOULD DENY: asks for 4h, over the 2h cap for rw (report mode)".
+Within seconds of each, Pushover should show:
+- first: **claude wants RW on n**: `Target: files-01-rw`, `Duration: 2h`, the reason in quotes, and a link to the tickets page;
+- second: the same with **POLICY WOULD DENY: asks for 4h, over the 2h cap for rw (report mode)** at the top.
 
-Then `sudo cat /opt/warpgate-approver/data/audit.jsonl` shows `seen`, `notified` and, once denied, `left-pending`.
+(The second is filed only after the first is resolved: Warpgate allows one pending request per user and target. So
+deny the first in the admin UI, run the second, then deny that too.)
 
-## 4. Switch to enforce (after a few days of report mode that matched your own judgement)
+Check the audit log (bastion):
 
-Set `POLICY_MODE: enforce` in `compose.yaml`, then `sudo docker compose up -d`. From then on, policy violations are
-denied with a reason starting `warpgate-approver:` (bastion-ssh prints it), and unanswered requests are denied after 15 min.
+```sh
+sudo cat /opt/warpgate-approver/data/audit.jsonl
+```
 
-## Update
+For each request: a `seen`, a `notified` and, after you denied it, a `left-pending` line.
 
-`make dist` on the Mac, stage `deploy/` as in step 1 (no secrets), then on bastion install the new files as in
-step 2 and `sudo docker compose up -d --build`. Restarting the broker never restarts Warpgate (separate project).
+## Switch to enforce (bastion, after a few days of report mode that matched your judgement)
+
+```sh
+sudo sed -i 's/^POLICY_MODE=report$/POLICY_MODE=enforce/' /opt/warpgate-approver/broker.env
+grep POLICY_MODE /opt/warpgate-approver/broker.env        # POLICY_MODE=enforce
+cd /opt/warpgate-approver && sudo docker compose up -d
+```
+
+From then on, policy violations are denied with a reason starting `warpgate-approver:` (bastion-ssh prints it), and
+requests left unanswered for 15 min are denied.
+
+## Update to a new version
+
+Steps 1, 2 and 4 only: no secrets needed, the installed ones and your `broker.env` are kept. The installer says so
+for each. Restarting the broker never restarts Warpgate (separate compose project).
 
 ## Stop / kill switch
 
-- Stop watching: `cd /opt/warpgate-approver && sudo docker compose down`.
-- Take its power away: Warpgate admin UI > Users > `approver` > delete its API token (or remove admin role
-  `ticket-approver`). The broker then alerts that its token was rejected.
+- Stop watching (bastion): `cd /opt/warpgate-approver && sudo docker compose down`
+- Take its power away: Warpgate admin UI > Users > `approver` > delete its API token (or remove its admin role
+  `ticket-approver`). If the broker is still running, it alerts after 5 min that its token was rejected.
 
 ## Notes
 
-- Egress: HTTPS to `bastion.home.example` (Warpgate, via the host) and `api.pushover.net`. Nothing listens.
+- Egress: HTTPS to `bastion.home.example` (Warpgate, through the host) and `api.pushover.net`. Nothing listens.
 - Pushover sees names, durations and reasons in plain text. Acceptable for this stopgap; APNs replaces it in phase 4.
-- Memory: `GOMEMLIMIT=32MiB` in the image, `mem_limit: 64m` in compose. State is bounded by the number of pending
-  requests; the audit log grows by a few hundred bytes per request.
+- Memory: `GOMEMLIMIT=32MiB` in the image, `mem_limit: 64m` in compose.
 - The approver token can also *read* Warpgate's user and target lists (0.28.6 allows that to any admin role). The
   broker needs them because ticket requests carry ids only. They hold no secrets.

@@ -1,5 +1,6 @@
 # /opt/warpgate-approver on bastion. Its own compose project: restarting it never touches Warpgate.
-# Secrets are root-provisioned files owned by 65532 (the container user), mode 0400, mounted read-only.
+# Settings are in broker.env (yours; install.sh never overwrites it). Secrets are files owned by 65532 (the
+# container user), mode 0400, mounted read-only.
 name: warpgate-approver
 
 services:
@@ -13,15 +14,7 @@ services:
     security_opt: ["no-new-privileges:true"]
     mem_limit: 64m
     pids_limit: 64
-    environment:
-      TZ: UTC
-      WARPGATE_URL: https://bastion.home.example
-      # report: notify and flag what the policy would deny, deny nothing. Switch to enforce once trusted.
-      POLICY_MODE: report
-      ALLOWED_REQUESTERS: claude,helper
-      MAX_DURATION_RW: 2h
-      MAX_DURATION_ADMIN: 2h
-      REQUEST_TTL: 15m
+    env_file: [broker.env]
     volumes:
       - ./data:/data
       - ./secrets/warpgate-token:/run/secrets/warpgate-token:ro
