@@ -37,12 +37,13 @@ curl -sf localhost:18749/requests -d '{"requester":"maggy","title":"maggy wants 
 
 newlink() { curl -sfL localhost:18741/enroll -H 'Sec-Fetch-Site: same-origin' --data-urlencode "user=$1" --data-urlencode "mode=$2" \
   | grep -o 'wga://enroll[^<"'"'"']*' | head -1 | sed 's/&amp;/\&/g'; }
-LINK=$(newlink vince new)  # the simulator becomes vince's first phone; the test asks for a join code itself later
+# The simulator becomes vince's first phone through phone sign-in (local mode: /app/enroll?user=vince); the test asks
+# the management UI for a join code itself later.
 xcrun simctl uninstall booted co.filby.approver 2>/dev/null || true
 xcrun simctl keychain booted reset  # the simulator keychain outlives an uninstall: start unenrolled
 
 echo "== starting UI test"
-( cd "$IOS" && TEST_RUNNER_WGA_ENROLL_LINK="$LINK" TEST_RUNNER_WGA_ADMIN_URL="http://127.0.0.1:18741" xcodebuild -project Approver.xcodeproj -scheme Approver \
+( cd "$IOS" && TEST_RUNNER_WGA_ADMIN_URL="http://127.0.0.1:18741" xcodebuild -project Approver.xcodeproj -scheme Approver \
     -destination "$DEST" -derivedDataPath build \
     -resultBundlePath "$S/ui.xcresult" test-without-building CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual > "$S/xcodebuild.log" 2>&1 ) &
 XT=$!
