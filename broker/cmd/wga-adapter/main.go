@@ -232,6 +232,10 @@ func warpgateSource() (*wgsource.Source, error) {
 		return def
 	}
 	dur := func(k, def string) (time.Duration, error) { return time.ParseDuration(get(k, def)) }
+	base := get("WARPGATE_URL", "")
+	if base == "" {
+		return nil, errors.New("WARPGATE_URL is required (the Warpgate base URL, e.g. https://bastion.example)")
+	}
 	tok, err := os.ReadFile(get("WARPGATE_TOKEN_FILE", "/run/secrets/warpgate-token"))
 	if err != nil {
 		return nil, err
@@ -255,7 +259,7 @@ func warpgateSource() (*wgsource.Source, error) {
 		}
 	}
 	return &wgsource.Source{
-		WG: warpgate.New(get("WARPGATE_URL", "https://interloper.home.example"), strings.TrimSpace(string(tok)), nil),
+		WG: warpgate.New(base, strings.TrimSpace(string(tok)), nil),
 		Policy: policy.Policy{Requesters: reqs, TTL: ttl,
 			MaxDuration: map[policy.Tier]time.Duration{policy.TierRW: rw, policy.TierAdmin: adm}},
 	}, nil

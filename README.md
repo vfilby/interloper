@@ -31,6 +31,9 @@ make e2e-ui    # real app in the iOS simulator against a live hub and demo adapt
 make dist      # tests, then deploy/broker for linux/arm64 (interloper)
 ```
 
+Host names in the docs are placeholders: `*.home.example` stands for your internal domain and `192.0.2.x` for LAN
+addresses. Put real values in local configuration (`broker.env`, flags), never in the repository: it is public.
+
 Trust is per **user**. Each user has a device list (roster) signed by their own phones, and a new phone is approved on
 an existing one with Face ID. Each adapter trusts a user once:
 `wga-adapter trust add-user <user> <account fingerprint>`. The hub hands out enrollment codes but cannot add a device
