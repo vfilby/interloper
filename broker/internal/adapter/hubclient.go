@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -85,4 +86,13 @@ func (h *HubClient) Decisions(ctx context.Context, wait time.Duration) ([]Queued
 
 func (h *HubClient) Ack(ctx context.Context, requestID string, ack protocol.Envelope) error {
 	return h.do(ctx, http.MethodPost, "/v1/adapter/acks", map[string]any{"request_id": requestID, "ack": ack}, nil)
+}
+
+// Roster fetches a user's roster chain. Not trusted: Trust verifies it against the pin.
+func (h *HubClient) Roster(ctx context.Context, user string) ([]protocol.Envelope, error) {
+	var out struct {
+		Chain []protocol.Envelope `json:"chain"`
+	}
+	err := h.do(ctx, http.MethodGet, "/v1/adapter/rosters?user="+url.QueryEscape(user), nil, &out)
+	return out.Chain, err
 }

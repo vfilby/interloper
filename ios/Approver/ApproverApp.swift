@@ -10,12 +10,12 @@ struct ApproverApp: App {
             RootView()
                 .environmentObject(model)
                 .onOpenURL { url in
-                    if let link = EnrollmentLink(url.absoluteString) {
-                        model.pendingLink = link
+                    do {
+                        model.pendingLink = try EnrollmentLink(parsing: url.absoluteString)
                         // Already enrolled: offer to move to that hub (or re-enroll at this one) instead of ignoring it.
                         if model.isEnrolled { model.sheet = .switchHub }
-                    } else {
-                        model.lastError = "Not an enrollment link: \(url.absoluteString)"
+                    } catch {
+                        model.lastError = error.localizedDescription
                     }
                 }
                 #if DEBUG && targetEnvironment(simulator)

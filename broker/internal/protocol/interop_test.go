@@ -140,3 +140,72 @@ func deviceFromFixture(t *testing.T, g goSealed) *softdevice.Device {
 	}
 	return dev
 }
+
+// Roster interop, also through testdata/interop:
+//
+//	go-roster.json    written here with WGA_WRITE_FIXTURE=1 from go-sealed.json's device ("A"): r1 (A's genesis for
+//	                  user "vince") and r2 (A admits a second device, B). The app's tests verify it against the account
+//	                  fingerprint and build r3 (A removes B) with CryptoKit.
+//	swift-roster.json written by the Swift side: {chain: [r1, r2, r3]}. TestSwiftRoster verifies it here.
+
+type goRoster struct {
+	User    string              `json:"user"`
+	Account string              `json:"account"`
+	Chain   []protocol.Envelope `json:"chain"`
+	DeviceA string              `json:"device_a"`
+	DeviceB string              `json:"device_b"`
+}
+
+func TestWriteGoRoster(t *testing.T) {
+	if os.Getenv("WGA_WRITE_FIXTURE") == "" {
+		t.Skip("set WGA_WRITE_FIXTURE=1 to rewrite testdata/interop/go-roster.json")
+	}
+	var g goSealed
+	readJSON(t, "go-sealed.json", &g)
+	a := deviceFromFixture(t, g)
+	b, _ := softdevice.New("interop device B")
+	now := time.Now()
+	r1, err := a.Genesis("vince", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h1, err := protocol.VerifyChain([]protocol.Envelope{r1}, "vince", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cardB, _ := b.Card(now)
+	r2, _ := a.Admit(h1, cardB, now)
+	out := goRoster{User: "vince", Account: h1.Account, Chain: []protocol.Envelope{r1, r2}, DeviceA: a.ID(), DeviceB: b.ID()}
+	bs, _ := json.MarshalIndent(out, "", "  ")
+	if err := os.WriteFile(filepath.Join(interopDir, "go-roster.json"), append(bs, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGoRosterVerifies(t *testing.T) {
+	var g goRoster
+	readJSON(t, "go-roster.json", &g)
+	h, err := protocol.VerifyChain(g.Chain, g.User, g.Account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(h.Devices) != 2 {
+		t.Fatalf("%d devices", len(h.Devices))
+	}
+}
+
+func TestSwiftRoster(t *testing.T) {
+	var g goRoster
+	readJSON(t, "go-roster.json", &g)
+	var s struct {
+		Chain []protocol.Envelope `json:"chain"`
+	}
+	readJSON(t, "swift-roster.json", &s)
+	h, err := protocol.VerifyChain(s.Chain, g.User, g.Account)
+	if err != nil {
+		t.Fatalf("Swift-extended chain: %v", err)
+	}
+	if h.Roster.Seq != 3 || len(h.Devices) != 1 || h.Devices[g.DeviceA].DeviceID == "" {
+		t.Fatalf("want A alone at seq 3, got seq %d with %d devices", h.Roster.Seq, len(h.Devices))
+	}
+}

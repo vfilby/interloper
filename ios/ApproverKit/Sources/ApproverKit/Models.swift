@@ -105,11 +105,33 @@ public struct DeviceCard: Codable, Equatable, Sendable {
 public struct EnrollRequest: Codable, Sendable {
     public var code: String
     public var card: Envelope
+    /// r1 of a new user (mode new); absent for a join.
+    public var genesis: Envelope?
 }
 
 public struct EnrollResponse: Codable, Sendable {
     public var deviceId: String
     public var token: String
+    public var user: String?
+    /// "active" (in the head roster) or "pending" (join not approved yet).
+    public var status: String?
+}
+
+public struct HubRoster: Codable, Equatable, Sendable {
+    public var user: String
+    public var chain: [Envelope]
+}
+
+public struct HubJoin: Codable, Equatable, Sendable, Identifiable {
+    public var deviceId: String
+    public var name: String
+    public var card: Envelope
+    public var requestedAt: Int64? // Unix seconds, as the hub sends it
+    public var id: String { deviceId }
+}
+
+public struct RosterPost: Codable, Sendable {
+    public var roster: Envelope
 }
 
 public struct HubAdapter: Codable, Equatable, Sendable, Identifiable {

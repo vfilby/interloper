@@ -140,3 +140,59 @@ func Load(path string) (*Device, error) {
 	}
 	return &Device{Name: f.Name, Approve: a, Deny: dn, Enc: e}, nil
 }
+
+// Genesis makes the first roster of a new user, with this device as its only member.
+func (d *Device) Genesis(user string, now time.Time) (protocol.Envelope, error) {
+	card, err := d.Card(now)
+	if err != nil {
+		return protocol.Envelope{}, err
+	}
+	return protocol.SignRoster(d.Approve, d.ID(), protocol.Roster{V: protocol.Version, User: user, Seq: 1,
+		Members: []protocol.Member{{Kind: protocol.MemberDevice, Card: card}}, TS: now.Unix()})
+}
+
+// Admit signs the roster after head with card added (approving a join request).
+func (d *Device) Admit(head protocol.Head, card protocol.Envelope, now time.Time) (protocol.Envelope, error) {
+	return protocol.SignRoster(d.Approve, d.ID(), protocol.NextRoster(head, append(head.Cards(), card), now.Unix()))
+}
+
+// Remove signs the roster after head without the given device.
+func (d *Device) Remove(head protocol.Head, deviceID string, now time.Time) (protocol.Envelope, error) {
+	var keep []protocol.Envelope
+	for _, c := range head.Cards() {
+		if c.Kid != deviceID {
+			keep = append(keep, c)
+		}
+	}
+	return protocol.SignRoster(d.Approve, d.ID(), protocol.NextRoster(head, keep, now.Unix()))
+}
+
+// Known is what a device remembers of its user's roster, to check the next chain against: the pinned account and
+// the last verified head.
+type Known struct {
+	User     string `json:"user"`
+	Account  string `json:"account,omitempty"`   // "" until first pinned
+	Seq      int    `json:"seq,omitempty"`       // last verified head
+	HeadHash string `json:"head_hash,omitempty"` // b64 SHA-256 of that head's payload
+}
+
+// Adopt verifies chain against k (docs/PROTOCOL.md: pin, then no lower seq, no different same-seq head, and a higher
+// seq must contain the known head) and returns the head and the updated Known. With no account pinned yet the
+// account is pinned now (trust on first use; compare the fingerprint with another of the user's devices).
+func Adopt(chain []protocol.Envelope, k Known) (protocol.Head, Known, error) {
+	h, err := protocol.VerifyChain(chain, k.User, k.Account)
+	if err != nil {
+		return h, k, err
+	}
+	if k.Seq > 0 {
+		if h.Roster.Seq < k.Seq {
+			return h, k, fmt.Errorf("roster v%d is older than v%d already seen", h.Roster.Seq, k.Seq)
+		}
+		p, _ := chain[k.Seq-1].PayloadBytes()
+		if protocol.B64(protocol.Hash(p)) != k.HeadHash {
+			return h, k, fmt.Errorf("roster v%d does not build on v%d already seen", h.Roster.Seq, k.Seq)
+		}
+	}
+	k.Account, k.Seq, k.HeadHash = h.Account, h.Roster.Seq, protocol.B64(protocol.Hash(h.Payload))
+	return h, k, nil
+}

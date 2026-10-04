@@ -3,6 +3,7 @@ package hub
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -34,7 +35,11 @@ func (a *API) Handler() http.Handler {
 	m.HandleFunc("POST /v1/adapter/requests", a.adapter(a.publish))
 	m.HandleFunc("GET /v1/adapter/decisions", a.adapter(a.decisions))
 	m.HandleFunc("POST /v1/adapter/acks", a.adapter(a.ack))
+	m.HandleFunc("GET /v1/adapter/rosters", a.adapter(a.adapterRosters))
 	m.HandleFunc("POST /v1/enroll", a.enroll)
+	m.HandleFunc("GET /v1/device/roster", a.device(a.deviceRoster))
+	m.HandleFunc("POST /v1/device/roster", a.device(a.postRoster))
+	m.HandleFunc("GET /v1/device/joins", a.device(a.deviceJoins))
 	m.HandleFunc("GET /v1/device/adapters", a.device(a.deviceAdapters))
 	m.HandleFunc("GET /v1/device/requests", a.device(a.deviceRequests))
 	m.HandleFunc("POST /v1/device/decisions", a.device(a.deviceDecide))
@@ -158,22 +163,85 @@ func (a *API) ack(w http.ResponseWriter, r *http.Request, ad *Adapter) {
 
 func (a *API) enroll(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		Code string            `json:"code"`
-		Card protocol.Envelope `json:"card"`
+		Code    string             `json:"code"`
+		Card    protocol.Envelope  `json:"card"`
+		Genesis *protocol.Envelope `json:"genesis"`
 	}
 	if !readJSON(w, r, &in) {
 		return
 	}
 	now := a.Now()
-	c, tok, err := a.Store.Enroll(in.Code, in.Card, now)
+	e, err := a.Store.Enroll(in.Code, in.Card, in.Genesis, now)
 	if err != nil {
-		a.audit(audit.Event{Time: now, Event: "enroll-failed", Device: c.DeviceID, Detail: err.Error()})
+		a.audit(audit.Event{Time: now, Event: "enroll-failed", Device: in.Card.Kid, Detail: err.Error()})
 		httpErr(w, http.StatusForbidden, err.Error())
 		return
 	}
-	ak, _ := protocol.UnB64(c.ApproveKey)
-	a.audit(audit.Event{Time: now, Event: "enrolled", Device: c.DeviceID, Detail: c.Name + " " + protocol.Fingerprint(ak)})
-	writeJSON(w, map[string]string{"device_id": c.DeviceID, "token": tok})
+	status := "active"
+	if !e.Active {
+		status = "pending"
+	}
+	ak, _ := protocol.UnB64(e.Card.ApproveKey)
+	a.audit(audit.Event{Time: now, Event: "enrolled", Device: e.Card.DeviceID, Requester: e.User,
+		Detail: status + " " + e.Card.Name + " " + protocol.Fingerprint(ak)})
+	writeJSON(w, map[string]string{"device_id": e.Card.DeviceID, "token": e.Token, "user": e.User, "status": status})
+}
+
+type chainOut struct {
+	User  string              `json:"user"`
+	Chain []protocol.Envelope `json:"chain"`
+}
+
+func (a *API) adapterRosters(w http.ResponseWriter, r *http.Request, _ *Adapter) {
+	user := r.URL.Query().Get("user")
+	chain, ok := a.Store.Chain(user)
+	if !ok {
+		httpErr(w, http.StatusNotFound, "no such user")
+		return
+	}
+	writeJSON(w, chainOut{user, chain})
+}
+
+func (a *API) deviceRoster(w http.ResponseWriter, _ *http.Request, d *Device) {
+	chain, ok := a.Store.Chain(d.User)
+	if !ok {
+		httpErr(w, http.StatusNotFound, "this device has no account (enrolled before accounts existed): enroll again")
+		return
+	}
+	writeJSON(w, chainOut{d.User, chain})
+}
+
+// postRoster appends the next roster to the device's user. The hub checks the chain so it stores nothing broken;
+// the security of it rests on adapters and devices checking it again.
+func (a *API) postRoster(w http.ResponseWriter, r *http.Request, d *Device) {
+	var in struct {
+		Roster protocol.Envelope `json:"roster"`
+	}
+	if !readJSON(w, r, &in) {
+		return
+	}
+	h, err := a.Store.AppendRoster(d.User, in.Roster)
+	if err != nil {
+		httpErr(w, http.StatusConflict, err.Error())
+		return
+	}
+	a.audit(audit.Event{Time: a.Now(), Event: "roster", Device: d.ID, Requester: d.User,
+		Detail: fmt.Sprintf("seq %d, %d devices", h.Roster.Seq, len(h.Devices))})
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *API) deviceJoins(w http.ResponseWriter, _ *http.Request, d *Device) {
+	type out struct {
+		DeviceID    string            `json:"device_id"`
+		Name        string            `json:"name"`
+		Card        protocol.Envelope `json:"card"`
+		RequestedAt int64             `json:"requested_at"`
+	}
+	res := []out{}
+	for _, j := range a.Store.Joins(d.User) {
+		res = append(res, out{j.ID, j.Name, j.Card, j.EnrolledAt.Unix()})
+	}
+	writeJSON(w, res)
 }
 
 func (a *API) deviceAdapters(w http.ResponseWriter, _ *http.Request, _ *Device) {

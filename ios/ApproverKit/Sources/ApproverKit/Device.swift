@@ -110,20 +110,42 @@ public func verifyES256(_ env: Envelope, x963: Data) throws -> Data {
     return payload
 }
 
-/// `wga://enroll?hub=<url>&code=<code>`
+/// `wga://enroll?hub=<url>&code=<code>&user=<id>&mode=new|join`
 public struct EnrollmentLink: Equatable, Sendable {
+    public enum Mode: String, Sendable { case new, join }
+
     public var hub: URL
     public var code: String
+    public var user: String
+    public var mode: Mode
 
-    public init?(_ s: String) {
+    public enum LinkError: Error, LocalizedError, Equatable {
+        case notALink
+        case old
+        public var errorDescription: String? {
+            switch self {
+            case .notALink: return "Not an enrollment link."
+            case .old: return "Old enrollment link (no user or mode): ask for a new code."
+            }
+        }
+    }
+
+    public init?(_ s: String) { try? self.init(parsing: s) }
+
+    public init(parsing s: String) throws {
         guard let c = URLComponents(string: s.trimmingCharacters(in: .whitespacesAndNewlines)),
               c.scheme == "wga", c.host == "enroll",
               let hubS = c.queryItems?.first(where: { $0.name == "hub" })?.value,
               let hub = URL(string: hubS), let scheme = hub.scheme, ["http", "https"].contains(scheme),
               let code = c.queryItems?.first(where: { $0.name == "code" })?.value, !code.isEmpty
-        else { return nil }
+        else { throw LinkError.notALink }
+        guard let user = c.queryItems?.first(where: { $0.name == "user" })?.value, isValidUserID(user),
+              let m = c.queryItems?.first(where: { $0.name == "mode" })?.value, let mode = Mode(rawValue: m)
+        else { throw LinkError.old }
         self.hub = hub
         self.code = code
+        self.user = user
+        self.mode = mode
     }
 }
 

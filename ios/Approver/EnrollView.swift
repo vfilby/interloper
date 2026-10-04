@@ -35,7 +35,8 @@ struct EnrollView: View {
             Section("Enrollment link") {
                 if let l = model.pendingLink {
                     LabeledContent("Hub", value: l.hub.absoluteString)
-                    LabeledContent("Code", value: l.code)
+                    LabeledContent("Account", value: l.user)
+                    LabeledContent("Enrolls as", value: l.mode == .new ? "first device of a new account" : "another device (needs approval)")
                 } else {
                     TextField("wga://enroll?hub=…&code=…", text: $linkText, axis: .vertical)
                         .textInputAutocapitalization(.never)
@@ -46,8 +47,11 @@ struct EnrollView: View {
                     }
                     Text("Scan the QR code in the management UI with the Camera app, or paste the link shown under it. Simulator: run the `xcrun simctl openurl` command shown on the enroll page.")
                         .font(.footnote).foregroundStyle(.secondary)
-                    if !linkText.isEmpty && EnrollmentLink(linkText) == nil {
-                        Text("Not an enrollment link.").font(.footnote).foregroundStyle(.red)
+                    if !linkText.isEmpty, let err = linkError(linkText) {
+                        Text(err).font(.footnote).foregroundStyle(.red)
+                    } else if let l = EnrollmentLink(linkText) {
+                        Text("Account \(l.user): \(l.mode == .new ? "first device of a new account" : "another device, approved on one you already have")")
+                            .font(.footnote)
                     }
                 }
             }
@@ -79,9 +83,11 @@ struct EnrollView: View {
                 }
                 .disabled(link == nil || working || name.isEmpty || (needsPIN && pin.count < 6))
             } footer: {
-                Text(newKeys
-                     ? "Creates this device's keys, signs its card (Face ID) and registers it with the hub. The hub cannot approve anything; each adapter must also be told to trust this device."
-                     : "Signs this device's card with its existing key (Face ID) and registers it with the hub. Adapters that already trust this device need nothing new.")
+                if link?.mode == .join {
+                    Text("Signs this device's card (Face ID) and asks to join the account. It can approve nothing until a device already on the account approves it there; compare this device's fingerprint on both screens.")
+                } else {
+                    Text("Creates this device's keys if needed, signs its card and the account's first roster (Face ID) and registers them with the hub. The hub cannot add devices to the account; adapters trust the account by its fingerprint.")
+                }
             }
 
             if let e = model.lastError {
@@ -94,6 +100,10 @@ struct EnrollView: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
             }
         }
+    }
+
+    private func linkError(_ s: String) -> String? {
+        do { _ = try EnrollmentLink(parsing: s); return nil } catch { return error.localizedDescription }
     }
 }
 
@@ -110,7 +120,23 @@ struct EnrollmentSummaryView: View {
                 } header: {
                     Text("Device fingerprint")
                 } footer: {
-                    Text("Must match what the management UI and each adapter's `trust add` print for this device.")
+                    Text(summary.account == nil
+                         ? "Compare it with what the device approving this one shows for the join request."
+                         : "Must match what the management UI shows for this device.")
+                }
+                Section {
+                    LabeledContent("Account", value: summary.user)
+                    if let a = summary.account {
+                        Text(a).font(.footnote.monospaced().weight(.semibold))
+                    } else {
+                        Text("Waiting for approval on another of \(summary.user)'s devices.").foregroundStyle(.orange)
+                    }
+                } header: {
+                    Text("Account fingerprint")
+                } footer: {
+                    if summary.account != nil {
+                        Text("Adapters trust the account by this fingerprint: `wga-adapter trust add-user \(summary.user) \(summary.account ?? "")`.")
+                    }
                 }
                 Section {
                     if summary.adapters.isEmpty {

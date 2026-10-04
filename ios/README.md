@@ -32,13 +32,35 @@ Or open `Approver.xcodeproj` in Xcode and run. A device build needs a signing te
 1. Start the hub with its device API on `http://127.0.0.1:8740` (the simulator shares the Mac's loopback).
 2. In the management UI, create an enrollment code. The enroll page shows a ready-made command for the simulator,
    which has no camera:
-   `xcrun simctl openurl booted 'wga://enroll?hub=http%3A%2F%2F127.0.0.1%3A8740&code=<code>'`. Click Open.
+   `xcrun simctl openurl booted 'wga://enroll?hub=…&code=…&user=vince&mode=new'`. Click Open.
    Pasting into the Enroll screen also works if Simulator's Edit → Automatically Sync Pasteboard is on; use the
-   Paste button.
-3. Enroll. The summary shows the device fingerprint and the adapters it pinned. Compare them with the management UI
-   and with what each adapter prints.
-4. Tell each adapter to trust the device (`adapter trust add`), then requests show up in the inbox. The app polls
-   every 5 s while in the foreground; pull to refresh.
+   Paste button. Links without `user` and `mode` are old: the app asks for a new code.
+3. Enroll. The summary shows the device fingerprint, the account fingerprint and the adapters it pinned.
+4. Tell each adapter to trust the account (`wga-adapter trust add-user vince <account fingerprint>`), then requests
+   show up in the inbox. The app polls every 5 s while in the foreground; pull to refresh.
+
+## Accounts (rosters)
+
+A user's devices are the head of a signed roster chain (docs/PROTOCOL.md, "Users and rosters"). Adapters trust the
+account, not single devices.
+
+- **First device** (`mode=new`): creates the account's first roster, signed by itself, and pins the account fingerprint.
+- **Another device** (`mode=join`): asks to join and is *pending*. The inbox shows its fingerprint until it is approved.
+  It can decide nothing meanwhile.
+- **Approving a join** (inbox, "Devices asking to join"):
+  - compare the fingerprint with the new phone's screen, then Approve (Face ID);
+  - this phone builds the next roster from its own verified copy of the chain, adds the card, signs it, and posts it.
+- **Removing a device** (Device tab → Devices on this account): signs a roster without it. The last device cannot be
+  removed. A removed device shows that it was removed and hides Approve/Deny.
+- **Checks on every refresh:** the chain verifies back to the pinned account fingerprint, and it must **build on the
+  head already accepted**:
+  - never shorter;
+  - holding exactly that roster at its seq.
+
+  That stops rollbacks, and forks signed by a device after it was removed (it keeps its key). The accepted head's
+  seq and payload hash are persisted. A refused chain shows a red error and the last good head stays.
+- **Pinning on join:** a joining device pins the account fingerprint on the first verified chain that includes it.
+  Before that, the fingerprint is shown as unconfirmed.
 
 The simulator always uses **software keys** (orange INSECURE banner): it reports a Secure Enclave, but its Face ID
 and app-password access control are not the real thing. A device uses the Secure Enclave:
@@ -56,8 +78,8 @@ Adapter pins are public keys, kept in UserDefaults.
 
 `scripts/e2e-ui.sh` (repository root) runs a real hub and the demo adapter on loopback. It then runs
 `ApproverUITests` in the simulator:
-1. The app enrolls from the link, through the `-wgaAutoEnroll` launch argument (simulator Debug builds only). The
-   script does the admin step: it downloads the card from the management UI and runs `wga-adapter trust add`.
+1. The app enrolls from the link (`mode=new`), through the `-wgaAutoEnroll` launch argument (simulator Debug builds
+   only). The script does the admin step: it trusts the new account at the adapter (`wga-adapter trust add-user`).
 2. The test opens a normal-risk request, taps Approve, and waits for the adapter's verified ack.
 3. It opens a high-risk request and checks that a tap does **not** approve it, then that a long press does.
 
@@ -68,9 +90,9 @@ device instead of the app.
 
 | Action | What it does | Adapters |
 |---|---|---|
-| **Enroll with another hub…** (or open a `wga://enroll` link while enrolled) | Enrolls with the new hub first, and forgets the old one only once that succeeds. Works for the same hub too, e.g. after its state was reset. | Keys are kept, so nothing to re-trust |
-| **Leave this hub** | Forgets the hub, its token, pins and requests. Keys are kept. | Still trusted; revoke the device at the hub if it should not come back |
-| **Reset device** | Leave the hub, and delete the keys | Every adapter must `trust add` the new card; `trust remove` the old one |
+| **Enroll with another hub…** (or open a `wga://enroll` link while enrolled) | Enrolls with the new hub first, and forgets the old hub (and the account, if the link is for another user or a new account) only once that succeeds. Works for the same hub too, e.g. after its state was reset. | Keys are kept |
+| **Leave this hub** | Forgets the hub, its token, adapter pins, the account and requests. Keys are kept. | To stop the device, remove it from the account on another device |
+| **Reset device** | Leave the hub, and delete the keys | New keys must join the account again; remove the old device from the account first |
 
 A hub that no longer knows the device (revoked, or its state wiped) answers 401. The app then says so and points to
 Enroll with another hub. A new code from the same hub re-enrolls the same keys.

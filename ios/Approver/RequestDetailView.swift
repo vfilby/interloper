@@ -56,6 +56,11 @@ struct RequestDetailView: View {
                 }
                 if r.isExpired() {
                     Text("Expired").foregroundStyle(.secondary)
+                } else if !model.canApprove {
+                    Text(model.membership == .removed
+                         ? "This device was removed from its account: it can no longer decide."
+                         : "This device is not on the account's verified device list yet: it cannot decide.")
+                        .foregroundStyle(.secondary)
                 } else if outcome?.allowsDecision ?? true {
                     if !model.isInsecure {
                         Toggle("Use app PIN instead of Face ID", isOn: $usePIN)

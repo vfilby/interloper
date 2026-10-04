@@ -1,12 +1,13 @@
 // Command wga-adapter runs one clearing-house adapter next to the service it guards.
 //
 //	wga-adapter key   [-dir D]                 create the signing key if missing; print the public key to register at the hub
-//	wga-adapter trust add [-dir D] CARD.json   trust a device (prints its fingerprint: compare with the phone)
-//	wga-adapter trust remove [-dir D] DEVICE_ID
-//	wga-adapter trust list [-dir D]
+//	wga-adapter trust add-user [-dir D] USER ACCOUNT   trust a user's devices (ACCOUNT: their account fingerprint)
+//	wga-adapter trust remove-user [-dir D] USER
+//	wga-adapter trust list [-dir D]                    users, and the devices on their last verified roster
 //	wga-adapter run -id ID -source demo|warpgate -hub URL [-dir D]
 //
-// The directory holds signing.key (0400), trusted-devices.json, hub-token (0400, from the hub's management UI),
+// The directory holds signing.key (0400), trusted-users.json, trusted-heads.json (verified rosters), hub-token (0400,
+// from the hub's management UI),
 // state.json and audit.jsonl. Warpgate source settings are the phase-1 broker's environment variables
 // (WARPGATE_URL, WARPGATE_TOKEN_FILE, ALLOWED_REQUESTERS, MAX_DURATION_RW, MAX_DURATION_ADMIN, REQUEST_TTL).
 package main
@@ -15,7 +16,6 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -60,7 +60,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: wga-adapter key [-dir D] | trust add [-dir D] CARD.json | trust remove [-dir D] ID | trust list [-dir D] | run [flags]  (flags before arguments)")
+	fmt.Fprintln(os.Stderr, "usage: wga-adapter key [-dir D] | trust add-user [-dir D] USER ACCOUNT | trust remove-user [-dir D] USER | trust list [-dir D] | run [flags]  (flags before arguments)")
 	os.Exit(2)
 }
 
@@ -107,43 +107,40 @@ func cmdTrust(args []string) error {
 	fs := flag.NewFlagSet("trust", flag.ExitOnError)
 	dir := fs.String("dir", "adapter-data", "adapter directory")
 	_ = fs.Parse(args[1:])
-	path := filepath.Join(*dir, "trusted-devices.json")
 	switch args[0] {
-	case "add":
-		if fs.NArg() != 1 {
+	case "add-user":
+		if fs.NArg() != 2 {
 			usage()
-		}
-		b, err := os.ReadFile(fs.Arg(0))
-		if err != nil {
-			return err
-		}
-		var e protocol.Envelope
-		if err := json.Unmarshal(b, &e); err != nil {
-			return err
 		}
 		if err := os.MkdirAll(*dir, 0o700); err != nil {
 			return err
 		}
-		c, err := adapter.TrustAdd(path, e)
-		if err != nil {
+		if err := adapter.TrustAddUser(*dir, fs.Arg(0), fs.Arg(1)); err != nil {
 			return err
 		}
-		ak, _ := protocol.UnB64(c.ApproveKey)
-		fmt.Printf("trusted %q (%s)\napprove key fingerprint: %s  <- must match the phone's Settings screen\n",
-			c.Name, c.DeviceID, protocol.Fingerprint(ak))
-	case "remove":
+		fmt.Printf("trusting user %s, account %s\n(the running adapter picks it up on its next poll; check the account fingerprint against the phone)\n", fs.Arg(0), fs.Arg(1))
+	case "remove-user":
 		if fs.NArg() != 1 {
 			usage()
 		}
-		return adapter.TrustRemove(path, fs.Arg(0))
+		return adapter.TrustRemoveUser(*dir, fs.Arg(0))
 	case "list":
-		t, err := adapter.LoadTrust(path)
+		t, err := adapter.LoadTrust(*dir)
 		if err != nil {
 			return err
 		}
-		for _, c := range t.Cards() {
-			ak, _ := protocol.UnB64(c.ApproveKey)
-			fmt.Printf("%s  %s  %q\n", c.DeviceID, protocol.Fingerprint(ak), c.Name)
+		pins, heads := t.Pins()
+		for _, p := range pins {
+			h, ok := heads[p.User]
+			if !ok {
+				fmt.Printf("%s  account %s  (roster not verified yet)\n", p.User, p.Account)
+				continue
+			}
+			fmt.Printf("%s  account %s  roster v%d\n", p.User, p.Account, h.Roster.Seq)
+			for _, c := range h.Devices {
+				ak, _ := protocol.UnB64(c.ApproveKey)
+				fmt.Printf("    %s  %q\n", protocol.Fingerprint(ak), c.Name)
+			}
 		}
 	default:
 		usage()
@@ -174,7 +171,7 @@ func cmdRun(args []string) error {
 	if err != nil {
 		return fmt.Errorf("hub token (from the hub's management UI): %w", err)
 	}
-	trust, err := adapter.LoadTrust(filepath.Join(*dir, "trusted-devices.json"))
+	trust, err := adapter.LoadTrust(*dir)
 	if err != nil {
 		return err
 	}

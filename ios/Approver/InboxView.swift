@@ -12,6 +12,23 @@ struct InboxView: View {
             }
             .listRowBackground(Color.clear)
 
+            MembershipBanner()
+
+            if !model.joins.isEmpty {
+                Section {
+                    ForEach(model.joins) { j in
+                        NavigationLink(value: JoinRoute(deviceID: j.deviceId)) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(sanitize(j.name)).font(.headline)
+                                Text(joinFingerprint(j)).font(.footnote.monospaced()).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                } header: {
+                    Text("Devices asking to join \(model.user ?? "")")
+                }
+            }
+
             Section("Pending") {
                 let live = model.requests.filter { !$0.record.isExpired(at: now) }
                 if live.isEmpty {
@@ -65,6 +82,13 @@ struct InboxView: View {
                 RequestDetailView(req: req)
             } else {
                 Text("No longer pending").foregroundStyle(.secondary)
+            }
+        }
+        .navigationDestination(for: JoinRoute.self) { route in
+            if let j = model.joins.first(where: { $0.deviceId == route.deviceID }) {
+                JoinDetailView(join: j)
+            } else {
+                Text("No longer asking to join").foregroundStyle(.secondary)
             }
         }
         .refreshable { await model.refresh() }
