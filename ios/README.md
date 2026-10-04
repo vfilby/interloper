@@ -27,17 +27,28 @@ run time every Keychain call fails with -34018 (missing entitlement), so it cann
 Or open `Approver.xcodeproj` in Xcode and run. A device build needs a signing team (set it in Xcode; it is not in
 `project.yml`).
 
-## Run against a local hub (simulator)
+## Connecting a device
 
-1. Start the hub with its device API on `http://127.0.0.1:8740` (the simulator shares the Mac's loopback).
-2. In the management UI, create an enrollment code. The enroll page shows a ready-made command for the simulator,
-   which has no camera:
-   `xcrun simctl openurl booted 'wga://enroll?hub=…&code=…&user=vince&mode=new'`. Click Open.
-   Pasting into the Enroll screen also works if Simulator's Edit → Automatically Sync Pasteboard is on; use the
-   Paste button. Links without `user` and `mode` are old: the app asks for a new code.
-3. Enroll. The summary shows the device fingerprint, the account fingerprint and the adapters it pinned.
-4. Tell each adapter to trust the account (`wga-adapter trust add-user vince <account fingerprint>`), then requests
-   show up in the inbox. The app polls every 5 s while in the foreground; pull to refresh.
+The app opens on **Connect to Interloper**. There are three steps:
+
+1. **Interloper server:** enter the address of your server, the page you manage it from (for example
+   `approvals.home.example`). The app checks it really is one (`/app/hello`) before going on.
+2. **Continue on the server:** the app opens the server in a private browser session. You sign in there
+   (Authelia, two-factor), and the server registers the device for you. The first time that is a new account;
+   otherwise the device joins your account and waits for approval on a phone you already have.
+3. **Connect this device:** name it, set the app PIN on a device with a Secure Enclave, and connect. The summary
+   shows the device and account fingerprints.
+
+The other way in is **I have an enrollment link or QR code**, using a code from the management page. Scanning its QR
+code with the Camera app opens the app straight at step 3.
+
+In the simulator against a local hub (no OIDC):
+- The hub says it has no sign-in, so step 2 asks for a user id instead.
+- Use `http://127.0.0.1:8741` as the server (the simulator shares the Mac's loopback).
+- Or run the `xcrun simctl openurl booted '…'` command the management page shows, then click Open.
+
+Then tell each adapter to trust the account (`wga-adapter trust add-user vince <account fingerprint>`), and requests
+show up in the inbox.
 
 ## Accounts (rosters)
 

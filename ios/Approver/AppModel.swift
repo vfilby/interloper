@@ -310,7 +310,7 @@ final class AppModel: ObservableObject {
             lastError = nil
         } catch HubClient.HubError.http(401, _) {
             lastError = "The hub no longer recognizes this device: it was revoked, or the hub's state was reset. "
-                + "Get a new enrollment code, then Device → Enroll with another hub (the same hub works too)."
+                + "Get a new enrollment code, then Device → Connect to another server (the same server works too)."
         } catch {
             lastError = error.localizedDescription
         }

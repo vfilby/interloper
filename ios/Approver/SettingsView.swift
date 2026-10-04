@@ -28,7 +28,7 @@ struct SettingsView: View {
 
             Section {
                 LabeledContent("Hub") { Text(model.hubURL?.absoluteString ?? "—").font(.footnote.monospaced()) }
-                Button("Enroll with another hub…") {
+                Button("Connect to another server…") {
                     model.pendingLink = nil
                     model.sheet = .switchHub
                 }
