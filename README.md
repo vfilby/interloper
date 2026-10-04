@@ -9,6 +9,7 @@ approvals: SSH tickets, held mail, scoped MCP leases (Paperless).
 - iOS app (native SwiftUI): [ios/README.md](ios/README.md)
 - Phase 1 deploy (broker + Pushover on interloper): [docs/runbooks/deploy-phase1.md](docs/runbooks/deploy-phase1.md)
 - Hub sign-in with Authelia (OIDC): [docs/runbooks/oidc.md](docs/runbooks/oidc.md)
+- TestFlight beta of the iOS app: [docs/runbooks/testflight.md](docs/runbooks/testflight.md)
 - The Warpgate/bastion side (cssh, cssh-ticket, hosts.toml `[approvers.approver]`, wg-apply) lives in
   `fnet-infrastructure/bastion`.
 

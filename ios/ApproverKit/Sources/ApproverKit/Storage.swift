@@ -17,7 +17,7 @@ public struct KeychainError: Error, LocalizedError {
 public struct KeychainStorage: SecretStorage {
     public let service: String
 
-    public init(service: String = "co.filby.approver") { self.service = service }
+    public init(service: String = "com.eff3.interloper") { self.service = service }
 
     private func query(_ key: String) -> [String: Any] {
         [kSecClass as String: kSecClassGenericPassword,

@@ -39,7 +39,7 @@ newlink() { curl -sfL localhost:18741/enroll -H 'Sec-Fetch-Site: same-origin' --
   | grep -o 'wga://enroll[^<"'"'"']*' | head -1 | sed 's/&amp;/\&/g'; }
 # The simulator becomes vince's first phone through phone sign-in (local mode: /app/enroll?user=vince); the test asks
 # the management UI for a join code itself later.
-xcrun simctl uninstall booted co.filby.approver 2>/dev/null || true
+xcrun simctl uninstall booted com.eff3.interloper 2>/dev/null || true
 xcrun simctl keychain booted reset  # the simulator keychain outlives an uninstall: start unenrolled
 
 echo "== starting UI test"
