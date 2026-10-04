@@ -18,7 +18,7 @@ func TestReEnroll(t *testing.T) {
 	card, _ := d.Card(now)
 	enroll := func() string {
 		t.Helper()
-		code, err := st.NewEnrollCode(now)
+		code, _, err := st.NewEnrollCode(now)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -50,7 +50,7 @@ func TestReEnroll(t *testing.T) {
 	}
 
 	// A code is still single-use.
-	code, _ := st.NewEnrollCode(now)
+	code, _, _ := st.NewEnrollCode(now)
 	if _, _, err := st.Enroll(code, card, now); err != nil {
 		t.Fatal(err)
 	}

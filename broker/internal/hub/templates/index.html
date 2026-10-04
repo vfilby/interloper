@@ -22,14 +22,15 @@
 <p class="muted">Contents are sealed to each device; the hub only sees this metadata.</p>
 {{else}}<p class="muted">Nothing pending.</p>{{end}}
 
-<h2>Devices</h2>
+<h2 id="devices">Devices</h2>
 <form method="post" action="/enroll"><button>Enroll a device…</button></form>
 {{if .Devices}}
 <table>
-  <tr><th>Name</th><th>Device id</th><th>Approve key</th><th>Enrolled</th><th>Last seen</th><th></th></tr>
+  <tr><th>Name</th><th>Fingerprint <span class="muted">(compare with the phone)</span></th><th>Enrolled</th><th>Last seen</th><th></th></tr>
   {{range .Devices}}
   <tr class="{{if .Revoked}}revoked{{end}}">
-    <td>{{.Name}}</td><td class="mono">{{.ID}}</td><td class="mono">{{cardfp .Card}}</td>
+    <td>{{.Name}}<br><span class="muted mono" title="device id">{{.ID}}</span></td>
+    <td class="mono" style="font-size: 1.1rem; font-weight: 600">{{cardfp .Card}}</td>
     <td>{{.EnrolledAt.Format "2006-01-02 15:04"}}</td><td>{{ago .LastSeen}}</td>
     <td>{{if not .Revoked}}
       <a href="/devices/{{.ID}}/card.json">card.json</a>
@@ -39,7 +40,8 @@
   {{end}}
 </table>
 <p class="muted">An enrolled device receives nothing until an adapter trusts it. On each adapter's host:
-<code>wga-adapter trust add device-&lt;id&gt;.json</code>, and check the fingerprint it prints against the phone's Settings screen.</p>
+<code>wga-adapter trust add -dir &lt;adapter dir&gt; device-&lt;id&gt;.json</code> (the card.json link), and check that the
+fingerprint it prints matches this column and the phone (shown after enrolling, and on its Device tab).</p>
 {{else}}<p class="muted">No devices enrolled.</p>{{end}}
 
 <h2>Adapters</h2>

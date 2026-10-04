@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"rsc.io/qr"
@@ -60,12 +61,16 @@ type Admin struct {
 	AuditPath string
 	HubURL    string // what devices use, put into the enrollment link
 	Log       *slog.Logger
+
+	linksMu sync.Mutex
+	links   map[string]string // code id -> enrollment link, until used or expired (never written to disk)
 }
 
 func (a *Admin) Handler() http.Handler {
 	m := http.NewServeMux()
 	m.HandleFunc("GET /{$}", a.index)
 	m.HandleFunc("POST /enroll", a.enroll)
+	m.HandleFunc("GET /enroll/{id}", a.enrollPage)
 	m.HandleFunc("GET /devices/{id}/card.json", a.card)
 	m.HandleFunc("POST /devices/{id}/revoke", a.revoke)
 	m.HandleFunc("POST /adapters", a.addAdapter)
@@ -121,9 +126,12 @@ type page struct {
 	Requests []Request
 	Flash    string
 	// enrollment
-	Link   string
-	QR     template.URL
-	Expiry time.Time
+	Link     string
+	QR       template.URL
+	Expiry   time.Time
+	Refresh  bool // pending: the page reloads itself until the code is used
+	Expired  bool
+	Enrolled *Device // the device that used the code
 	// adapter added
 	NewAdapter, NewToken string
 	// audit
@@ -145,21 +153,66 @@ func (a *Admin) index(w http.ResponseWriter, _ *http.Request) {
 	a.render(w, "index.html", a.overview(""))
 }
 
-func (a *Admin) enroll(w http.ResponseWriter, _ *http.Request) {
+// enroll issues a code and sends the browser to its own page, which follows it until a phone uses it.
+func (a *Admin) enroll(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
-	code, err := a.Store.NewEnrollCode(now)
+	code, id, err := a.Store.NewEnrollCode(now)
 	if err != nil {
 		a.render(w, "index.html", a.overview(err.Error()))
 		return
 	}
 	link := "wga://enroll?hub=" + url.QueryEscape(a.HubURL) + "&code=" + url.QueryEscape(code)
-	p := page{Title: "Enroll a device", Link: link, Expiry: now.Add(EnrollCodeTTL)}
-	if c, err := qr.Encode(link, qr.M); err == nil {
-		c.Scale = 6
-		p.QR = template.URL("data:image/png;base64," + base64.StdEncoding.EncodeToString(c.PNG()))
+	a.linksMu.Lock()
+	if a.links == nil {
+		a.links = map[string]string{}
 	}
-	a.write(audit.Event{Time: now, Event: "enroll-code-issued"})
+	a.links[id] = link // memory only: after a restart the page says to make a new code
+	a.linksMu.Unlock()
+	a.write(audit.Event{Time: now, Event: "enroll-code-issued", Detail: "id " + id})
+	http.Redirect(w, r, "/enroll/"+id, http.StatusSeeOther)
+}
+
+// enrollPage shows the code (QR, link, simulator command) and refreshes itself every few seconds until a phone
+// enrolls with it; then it shows that device's name and fingerprint, to compare with the phone.
+func (a *Admin) enrollPage(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	expires, devID, ok := a.Store.EnrollStatus(id)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	p := page{Title: "Enroll a device", Expiry: expires}
+	if devID != "" {
+		if d, ok := a.Store.Device(devID); ok {
+			p.Title, p.Enrolled = "Device enrolled", &d
+		}
+		a.forget(id)
+		a.render(w, "enroll.html", p)
+		return
+	}
+	if time.Now().After(expires) {
+		p.Expired = true
+		a.forget(id)
+		a.render(w, "enroll.html", p)
+		return
+	}
+	a.linksMu.Lock()
+	p.Link = a.links[id]
+	a.linksMu.Unlock()
+	if p.Link != "" {
+		if c, err := qr.Encode(p.Link, qr.M); err == nil {
+			c.Scale = 6
+			p.QR = template.URL("data:image/png;base64," + base64.StdEncoding.EncodeToString(c.PNG()))
+		}
+	}
+	p.Refresh = true
 	a.render(w, "enroll.html", p)
+}
+
+func (a *Admin) forget(id string) {
+	a.linksMu.Lock()
+	delete(a.links, id)
+	a.linksMu.Unlock()
 }
 
 func (a *Admin) card(w http.ResponseWriter, r *http.Request) {

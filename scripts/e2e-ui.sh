@@ -35,7 +35,7 @@ sleep 1
 curl -sf localhost:18749/requests -d '{"requester":"claude","title":"claude wants RW on forge-01","risk":"elevated","reason":"fix the backups","facts":[{"label":"Host","value":"forge-01"},{"label":"Access","value":"RW","level":"warn"},{"label":"Duration","value":"2h"}]}' >/dev/null
 curl -sf localhost:18749/requests -d '{"requester":"maggy","title":"maggy wants ADMIN on n","risk":"high","reason":"rotate certs ‮(bidi trick)","facts":[{"label":"Host","value":"n"},{"label":"Access","value":"ADMIN","level":"danger"}],"on_behalf_of":{"principal":"slack:U0123","display":"Kim","attested_by":"nanoclaw@drones"}}' >/dev/null
 
-newlink() { curl -sf -X POST localhost:18741/enroll -H 'Sec-Fetch-Site: same-origin' | grep -o 'wga://enroll[^<"'"'"']*' | head -1 | sed 's/&amp;/\&/g'; }
+newlink() { curl -sfL -d "" localhost:18741/enroll -H 'Sec-Fetch-Site: same-origin' | grep -o 'wga://enroll[^<"'"'"']*' | head -1 | sed 's/&amp;/\&/g'; }
 LINK=$(newlink)
 LINK2=$(newlink)  # for re-enrolling from the Device tab
 xcrun simctl uninstall booted co.filby.approver 2>/dev/null || true

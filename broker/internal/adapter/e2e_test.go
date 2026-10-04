@@ -73,7 +73,7 @@ func newWorld(t *testing.T) *world {
 	enroll := func(name string) (*softdevice.Device, *softdevice.Client, protocol.Envelope) {
 		d, _ := softdevice.New(name)
 		card, _ := d.Card(w.now)
-		code, err := st.NewEnrollCode(time.Now())
+		code, _, err := st.NewEnrollCode(time.Now())
 		if err != nil {
 			t.Fatal(err)
 		}

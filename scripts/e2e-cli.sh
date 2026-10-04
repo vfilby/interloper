@@ -33,7 +33,7 @@ echo "== cross-site POST is refused"
 curl -s -o /dev/null -w '%{http_code}\n' -X POST localhost:18741/enroll -H 'Sec-Fetch-Site: cross-site'
 
 echo "== enroll a software device"
-LINK=$(curl -sf -X POST localhost:18741/enroll -H 'Sec-Fetch-Site: same-origin' | grep -o 'wga://enroll[^<"]*' | head -1 | sed 's/&amp;/\&/g')
+LINK=$(curl -sfL -d "" localhost:18741/enroll -H 'Sec-Fetch-Site: same-origin' | grep -o 'wga://enroll[^<"]*' | head -1 | sed 's/&amp;/\&/g')
 echo "link: ${LINK:0:60}…"
 "$B/wga-device" init -f dev.json -name "smoke device"
 "$B/wga-device" enroll -f dev.json "$LINK"
