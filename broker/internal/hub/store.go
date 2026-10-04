@@ -51,6 +51,8 @@ type Device struct {
 	Revoked       bool              `json:"revoked,omitempty"`
 	User          string            `json:"user,omitempty"`           // "" only for devices enrolled before accounts existed
 	JoinRequested bool              `json:"join_requested,omitempty"` // enrolled with a join code, not yet in the user's roster
+	PushToken     string            `json:"push_token,omitempty"`     // APNs device token, set by the app
+	PushSandbox   bool              `json:"push_sandbox,omitempty"`   // the token is for APNs' development environment
 }
 
 type Request struct {

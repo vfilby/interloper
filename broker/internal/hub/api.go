@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"warpgate-approver/broker/internal/apns"
 	"warpgate-approver/broker/internal/audit"
 	"warpgate-approver/broker/internal/protocol"
 )
@@ -22,6 +23,9 @@ type API struct {
 	Log     *slog.Logger
 	Now     func() time.Time
 	MaxWait time.Duration // cap on the decisions long-poll
+	Push    Pusher        // nil: no push notifications
+
+	pushed chan struct{} // tests: signalled after each background push batch
 }
 
 func (a *API) Handler() http.Handler {
@@ -40,6 +44,7 @@ func (a *API) Handler() http.Handler {
 	m.HandleFunc("GET /v1/device/roster", a.device(a.deviceRoster))
 	m.HandleFunc("POST /v1/device/roster", a.device(a.postRoster))
 	m.HandleFunc("POST /v1/device/leave", a.device(a.deviceLeave))
+	m.HandleFunc("POST /v1/device/push", a.device(a.devicePush))
 	m.HandleFunc("GET /v1/device/joins", a.device(a.deviceJoins))
 	m.HandleFunc("GET /v1/device/adapters", a.device(a.deviceAdapters))
 	m.HandleFunc("GET /v1/device/requests", a.device(a.deviceRequests))
@@ -107,6 +112,16 @@ func (a *API) publish(w http.ResponseWriter, r *http.Request, ad *Adapter) {
 		return
 	}
 	a.audit(audit.Event{Time: now, Event: "published", Adapter: ad.ID, RequestID: in.ID, Detail: in.Kind})
+	ids := make([]string, 0, len(in.Boxes))
+	for id := range in.Boxes {
+		ids = append(ids, id)
+	}
+	exp := time.Time{}
+	if in.ExpiresAt > 0 {
+		exp = time.Unix(in.ExpiresAt, 0)
+	}
+	a.wake(ids, apns.Notification{Title: "Approval request", Body: "Open Interloper to review it.", Expiration: exp,
+		ThreadID: "requests"})
 	w.WriteHeader(http.StatusCreated)
 }
 
@@ -182,6 +197,10 @@ func (a *API) enroll(w http.ResponseWriter, r *http.Request) {
 	if !e.Active {
 		status = "pending"
 	}
+	if !e.Active {
+		a.wake(a.Store.members(e.User), apns.Notification{Title: "New device",
+			Body: "A device asks to join your account. Open Interloper to compare fingerprints.", ThreadID: "joins"})
+	}
 	ak, _ := protocol.UnB64(e.Card.ApproveKey)
 	a.audit(audit.Event{Time: now, Event: "enrolled", Device: e.Card.DeviceID, Requester: e.User,
 		Detail: status + " " + e.Card.Name + " " + protocol.Fingerprint(ak)})
@@ -253,6 +272,26 @@ func (a *API) deviceLeave(w http.ResponseWriter, r *http.Request, d *Device) {
 		detail = "removed itself from the roster"
 	}
 	a.audit(audit.Event{Time: a.Now(), Event: "device-left", Device: d.ID, Requester: d.User, Detail: detail})
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// devicePush: the app registers (or, with an empty token, withdraws) its APNs device token.
+func (a *API) devicePush(w http.ResponseWriter, r *http.Request, d *Device) {
+	var in struct {
+		Token       string `json:"token"`
+		Environment string `json:"environment"` // production | development
+	}
+	if !readJSON(w, r, &in) {
+		return
+	}
+	if in.Environment != "production" && in.Environment != "development" {
+		httpErr(w, http.StatusBadRequest, "environment: production or development")
+		return
+	}
+	if err := a.Store.SetPushToken(d.ID, in.Token, in.Environment == "development"); err != nil {
+		httpErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

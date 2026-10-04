@@ -222,6 +222,7 @@ reach different routes. Tokens are transport credentials: they stop LAN noise an
 | `GET /v1/device/roster` | device | `{user, chain}` for the device's user |
 | `POST /v1/device/roster` | device (current member) | `{roster: envelope}`: the next roster. The hub checks it extends the chain, appends it, and stops serving devices it removes |
 | `POST /v1/device/leave` | device | `{roster?, delete_account?}`: the device goes away and the hub deletes its record. `roster` is the next roster, without this device, signed by it: it takes itself off the account first. `delete_account` is only for the account's last device (its keys are going, so nothing could sign for the account again): the hub deletes the account. Neither: the roster is unchanged and the device may come back with a join code. |
+| `POST /v1/device/push` | device | `{token, environment}`: the device's APNs token (hex) and `production` or `development`; an empty token stops pushes. The hub pushes a fixed text, never request content: "Approval request" to the devices a request is sealed for, "New device" to an account's devices when another asks to join. |
 | `GET /v1/device/joins` | device | `[{device_id, name, card, requested_at}]`: pending join requests for the device's user |
 | `GET /v1/device/adapters` | device | `[{id, key, fingerprint}]`: adapter keys to pin (trust on first use, fingerprints shown) |
 | `GET /v1/device/requests` | device | `[{id, adapter, kind, created_at, expires_at, box}]`: pending requests that have a box for this device |
