@@ -123,6 +123,9 @@ func (ad *Adapter) Tick(ctx context.Context) error {
 	if err := ad.trust.Reload(); err != nil {
 		return fmt.Errorf("trust list: %w", err) // fail closed: no publishing with an unreadable list
 	}
+	for _, err := range ad.trust.Refresh(ctx, ad.hub.Roster) {
+		ad.log.Warn("trusted users", "err", err) // that user keeps their last verified roster
+	}
 	items, err := ad.src.Pending(ctx)
 	if err != nil {
 		return fmt.Errorf("source: %w", err)
@@ -188,7 +191,7 @@ func (ad *Adapter) newRecord(it Item, now time.Time) (*open, error) {
 	if exp.IsZero() {
 		exp = now.Add(ad.cfg.TTL)
 	}
-	idb := protocol.NewNonce()
+	idb := protocol.NewRequestID()
 	rec := protocol.Record{V: protocol.Version, ID: idb, Adapter: ad.cfg.ID, Kind: it.Kind, Shape: it.Shape,
 		Risk: it.Risk, Title: it.Title, Requester: it.Requester, OnBehalfOf: it.OnBehalfOf, Facts: it.Facts,
 		Reason: it.Reason, Lease: it.Lease, CreatedAt: now.Unix(), ExpiresAt: exp.Unix(), Nonce: protocol.NewNonce()}
@@ -273,11 +276,12 @@ func (ad *Adapter) Handle(ctx context.Context, q QueuedDecision) {
 		reject("unknown or already decided request")
 		return
 	}
-	card, ok := ad.trust.Card(q.Decision.Kid)
+	card, user, ok := ad.trust.Card(q.Decision.Kid)
 	if !ok {
-		reject("device " + q.Decision.Kid + " is not trusted by this adapter")
+		reject("device " + q.Decision.Kid + " is not on the roster of a user this adapter trusts")
 		return
 	}
+	who := user + " on " + card.Name
 	d, err := protocol.VerifyDecision(q.Decision, card, ad.cfg.ID, o.Payload, o.Record, now)
 	if err != nil {
 		reject(err.Error())
@@ -302,7 +306,7 @@ func (ad *Adapter) Handle(ctx context.Context, q QueuedDecision) {
 	if d.Decision == protocol.Approve {
 		err = ad.src.Approve(ctx, o.Key)
 	} else {
-		err = ad.src.Deny(ctx, o.Key, "denied by "+card.Name)
+		err = ad.src.Deny(ctx, o.Key, "denied by "+who)
 	}
 	switch {
 	case errors.Is(err, ErrGone):
@@ -310,9 +314,9 @@ func (ad *Adapter) Handle(ctx context.Context, q QueuedDecision) {
 	case err != nil:
 		ad.sendAck(ctx, o, protocol.OutcomeFailed, err.Error(), q.Decision)
 	case d.Decision == protocol.Approve:
-		ad.finish(ctx, o, protocol.OutcomeApproved, "approved on "+card.Name, &q.Decision)
+		ad.finish(ctx, o, protocol.OutcomeApproved, "approved by "+who, &q.Decision)
 	default:
-		ad.finish(ctx, o, protocol.OutcomeDenied, "denied on "+card.Name, &q.Decision)
+		ad.finish(ctx, o, protocol.OutcomeDenied, "denied by "+who, &q.Decision)
 	}
 }
 

@@ -7,7 +7,7 @@ part of the protocol. Architecture and reasoning: [DESIGN.md](DESIGN.md), sectio
 
 | Role | Holds | Trusted for |
 |---|---|---|
-| **Adapter** (one per service: Warpgate, Mailpit, Paperless, …) | the service credential; an Ed25519 signing key; the pinned device list | building the request record, verifying decisions, acting |
+| **Adapter** (one per service: Warpgate, Mailpit, Paperless, …) | the service credential; an Ed25519 signing key; pinned users (user id + account fingerprint) | building the request record, verifying decisions, acting |
 | **Hub** | nothing that can act: bearer tokens for transport, ciphertexts, metadata | relaying and storing. It can drop or delay; it cannot approve, forge, or read a record |
 | **Device** (iPhone) | Secure Enclave keys | showing the record, getting Face ID / PIN, signing the decision |
 
@@ -138,17 +138,70 @@ verify) and `failed` (the service call failed) are **notes**: the request stays 
 again. That produces a fresh decision with a new `ts` and the same record nonce. A record's nonce is used up only when
 the adapter acts on it.
 
-## Device card (enrollment)
+## Device card
 
-A signed envelope (`es256`, `kid` = device id, signed with the approve key: enrollment needs Face ID) over:
+A signed envelope (`es256`, `kid` = device id, signed with the approve key: making it needs Face ID) over:
 
 ```json
 {"v": 1, "device_id": "…", "name": "Vince's iPhone", "approve_key": "<b64>", "deny_key": "<b64>",
  "enc_key": "<b64>", "created_at": 1790000000}
 ```
 
-Adapters pin device cards. They do not trust the hub's device list. Adding a device to an adapter is a local admin
-step (`adapter trust add card.json`). The admin compares the printed fingerprint with the one on the phone.
+A card says what a device's keys are. Which **user** a device belongs to is said only by that user's roster.
+
+## Users and rosters
+
+A user (`vince`, `kim`; 1–40 of `a-z 0-9 . _ -`) is the set of devices on the head of their **roster chain**. Each
+roster is a signed envelope (`es256`, `kid` = id of the signing device) over:
+
+```json
+{
+  "v": 1,
+  "user": "vince",
+  "seq": 2,
+  "prev": "<b64 SHA-256 of roster seq-1's payload bytes; empty for seq 1>",
+  "members": [ {"kind": "device", "card": <device card envelope>}, … ],
+  "ts": 1790000000
+}
+```
+
+A chain `[r1, r2, …, rn]` is valid only if all of these hold:
+- **r1 (genesis):** `seq` 1, empty `prev`. It is signed by the approve key of a device that is a member of r1.
+- **Each later rk:**
+  - `seq` = k and `user` is unchanged;
+  - `prev` = SHA-256 of r(k-1)'s payload bytes;
+  - it is signed by the approve key of a device that is a member of **r(k-1)**, the previous roster. That device may
+    be absent from rk: a device can remove itself.
+- **Every roster:**
+  - at least one member;
+  - every card verifies (as in "Device card");
+  - no device id appears twice.
+- **Unknown member kinds** make the roster invalid. `recovery` (an offline key that may sign roster updates but never
+  decisions) is reserved for a later version.
+
+The **account fingerprint** pins a user. It is the first 16 bytes of SHA-256 over r1's payload bytes, as 8 groups of
+4 hex digits: `3f2a-91c0-77de-0b14-5c2e-aa01-9d3b-71f0`. The phone that made r1 shows it, and so does the hub. An adapter
+pins `(user, account fingerprint)` and accepts a chain only if the hash of its r1 matches.
+
+Adding a device:
+1. The new device enrolls with a **join** code for the user. It is then pending: no adapter knows it.
+2. An existing device of the user sees the join request: name and device fingerprint, which the person compares with
+   the new phone.
+3. On approval (Face ID), that device builds the next roster from **its own verified copy** of the chain, adds the
+   new card, signs it, and posts it.
+
+Removing a device is a next roster without it, signed on any current device.
+
+Adapters re-fetch chains and verify them back to the pin. Compared with the head they last verified, a chain is
+refused if any of these hold:
+- its head has a lower `seq`;
+- its head has the same `seq` but different bytes;
+- its head has a higher `seq` but the chain does not contain that exact last-verified head. A device removed at vN
+  still holds its key; it could sign an alternative vN' from v(N-1), where it was a member, and then vN+1'. Without
+  this rule that would undo the removal.
+
+Devices apply the same rules to their own user's chain. So the hub cannot add devices or roll back a removal an adapter has seen. It can still withhold a newer roster:
+a removal takes effect at an adapter only once that adapter sees it.
 
 ## Hub HTTP API (transport only)
 
@@ -160,7 +213,11 @@ reach different routes. Tokens are transport credentials: they stop LAN noise an
 | `POST /v1/adapter/requests` | adapter | `{id, kind, expires_at, boxes: {device_id: sealed}}`: publish a request |
 | `GET /v1/adapter/decisions?wait=25` | adapter | long-poll: `[{request_id, device_id, decision: envelope}]` not yet taken |
 | `POST /v1/adapter/acks` | adapter | `{request_id, ack: envelope}`: resolves the request at the hub |
-| `POST /v1/enroll` | new device (one-time code instead of a token) | `{code, card: envelope}` → `{device_id, token}` |
+| `GET /v1/adapter/rosters?user=<id>` | adapter | `{user, chain: [roster envelopes]}` |
+| `POST /v1/enroll` | new device (one-time code instead of a token) | `{code, card, genesis?}` → `{device_id, token, user, status}`. `genesis` (r1, containing this card) is required for a `new` code and refused for a `join` code. `status` is `active` (in the head roster) or `pending` (join not approved yet). |
+| `GET /v1/device/roster` | device | `{user, chain}` for the device's user |
+| `POST /v1/device/roster` | device (current member) | `{roster: envelope}`: the next roster. The hub checks it extends the chain, appends it, and stops serving devices it removes |
+| `GET /v1/device/joins` | device | `[{device_id, name, card, requested_at}]`: pending join requests for the device's user |
 | `GET /v1/device/adapters` | device | `[{id, key, fingerprint}]`: adapter keys to pin (trust on first use, fingerprints shown) |
 | `GET /v1/device/requests` | device | `[{id, adapter, kind, created_at, expires_at, box}]`: pending requests that have a box for this device |
 | `POST /v1/device/decisions` | device | `{adapter, request_id, decision: envelope}` |
@@ -169,7 +226,9 @@ reach different routes. Tokens are transport credentials: they stop LAN noise an
 The enrollment link the management UI shows as a QR code (and as text):
 
 ```
-wga://enroll?hub=<url-encoded hub base URL>&code=<one-time code>
+wga://enroll?hub=<url-encoded hub base URL>&code=<one-time code>&user=<user id>&mode=new|join
 ```
 
-The code expires after 10 minutes and works once.
+`mode=new` makes the first device of a new user, which creates and signs r1. `mode=join` adds a device to an existing
+user, pending approval on one of that user's devices. The code expires after 10 minutes and works once. `user` and
+`mode` in the link only tell the app what to do; the hub enforces the code's own user and mode.

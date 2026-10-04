@@ -165,6 +165,16 @@ type DeviceCard struct {
 	CreatedAt  int64  `json:"created_at"`
 }
 
+// NewRequestID returns 12 random bytes as hex: safe to type and to pass as a command-line argument (a base64url id
+// can start with "-").
+func NewRequestID() string {
+	b := make([]byte, 12)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return hex.EncodeToString(b)
+}
+
 // NewNonce returns 16 random bytes, encoded.
 func NewNonce() string {
 	b := make([]byte, 16)

@@ -80,16 +80,50 @@ func (c *Client) do(ctx context.Context, method, path string, in, out any) error
 }
 
 // Enroll spends the one-time code and stores the device token in c.
-func (c *Client) Enroll(ctx context.Context, code string, card protocol.Envelope) (string, error) {
-	var out struct {
-		DeviceID string `json:"device_id"`
-		Token    string `json:"token"`
+type EnrollResult struct {
+	DeviceID string `json:"device_id"`
+	Token    string `json:"token"`
+	User     string `json:"user"`
+	Status   string `json:"status"` // active | pending
+}
+
+// Enroll spends the one-time code and stores the device token in c. genesis is the new user's first roster for a
+// `new` code, nil for a `join` code.
+func (c *Client) Enroll(ctx context.Context, code string, card protocol.Envelope, genesis *protocol.Envelope) (EnrollResult, error) {
+	var out EnrollResult
+	in := map[string]any{"code": code, "card": card}
+	if genesis != nil {
+		in["genesis"] = genesis
 	}
-	if err := c.do(ctx, http.MethodPost, "/v1/enroll", map[string]any{"code": code, "card": card}, &out); err != nil {
-		return "", err
+	if err := c.do(ctx, http.MethodPost, "/v1/enroll", in, &out); err != nil {
+		return out, err
 	}
 	c.Token = out.Token
-	return out.DeviceID, nil
+	return out, nil
+}
+
+// Roster fetches this device's user's chain (unverified).
+func (c *Client) Roster(ctx context.Context) ([]protocol.Envelope, error) {
+	var out struct {
+		Chain []protocol.Envelope `json:"chain"`
+	}
+	return out.Chain, c.do(ctx, http.MethodGet, "/v1/device/roster", nil, &out)
+}
+
+func (c *Client) PostRoster(ctx context.Context, r protocol.Envelope) error {
+	return c.do(ctx, http.MethodPost, "/v1/device/roster", map[string]any{"roster": r}, nil)
+}
+
+type Join struct {
+	DeviceID    string            `json:"device_id"`
+	Name        string            `json:"name"`
+	Card        protocol.Envelope `json:"card"`
+	RequestedAt int64             `json:"requested_at"`
+}
+
+func (c *Client) Joins(ctx context.Context) ([]Join, error) {
+	var out []Join
+	return out, c.do(ctx, http.MethodGet, "/v1/device/joins", nil, &out)
 }
 
 func (c *Client) Adapters(ctx context.Context) ([]HubAdapter, error) {

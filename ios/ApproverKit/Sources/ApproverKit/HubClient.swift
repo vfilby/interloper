@@ -20,10 +20,21 @@ public struct HubClient: Sendable {
         }
     }
 
-    public func enroll(code: String, card: Envelope) async throws -> EnrollResponse {
-        let d = try await call("POST", "/v1/enroll", body: try Coders.encoder.encode(EnrollRequest(code: code, card: card)), auth: false)
+    public func enroll(code: String, card: Envelope, genesis: Envelope? = nil) async throws -> EnrollResponse {
+        let body = try Coders.encoder.encode(EnrollRequest(code: code, card: card, genesis: genesis))
+        let d = try await call("POST", "/v1/enroll", body: body, auth: false)
         return try Coders.decoder.decode(EnrollResponse.self, from: d)
     }
+
+    public func roster() async throws -> HubRoster {
+        try Coders.decoder.decode(HubRoster.self, from: await call("GET", "/v1/device/roster"))
+    }
+
+    public func postRoster(_ env: Envelope) async throws {
+        _ = try await call("POST", "/v1/device/roster", body: try Coders.encoder.encode(RosterPost(roster: env)))
+    }
+
+    public func joins() async throws -> [HubJoin] { try list(await call("GET", "/v1/device/joins")) }
 
     public func adapters() async throws -> [HubAdapter] { try list(await call("GET", "/v1/device/adapters")) }
 

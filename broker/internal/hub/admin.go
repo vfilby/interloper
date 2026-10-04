@@ -72,7 +72,6 @@ func (a *Admin) Handler() http.Handler {
 	m.HandleFunc("POST /enroll", a.enroll)
 	m.HandleFunc("GET /enroll/{id}", a.enrollPage)
 	m.HandleFunc("GET /enroll/{id}/status", a.enrollStatus)
-	m.HandleFunc("GET /devices/{id}/card.json", a.card)
 	m.HandleFunc("POST /devices/{id}/revoke", a.revoke)
 	m.HandleFunc("POST /adapters", a.addAdapter)
 	m.HandleFunc("POST /adapters/{id}/remove", a.removeAdapter)
@@ -129,6 +128,7 @@ func securityHeaders(h http.Handler) http.Handler {
 
 type page struct {
 	Title    string
+	Users    []UserView
 	Adapters []Adapter
 	Devices  []Device
 	Requests []Request
@@ -138,8 +138,12 @@ type page struct {
 	QR       template.URL
 	Expiry   time.Time
 	CodeID   string // the enroll page frames /enroll/<id>/status, which reloads itself; the page does not
+	CodeUser string
+	CodeMode string
 	Expired  bool
 	Enrolled *Device // the device that used the code
+	Active   bool    // that device is in its user's roster (a join was approved; a new user is active at once)
+	Account  string  // the user's account fingerprint, once known
 	// adapter added
 	NewAdapter, NewToken string
 	// audit
@@ -154,53 +158,73 @@ func (a *Admin) render(w http.ResponseWriter, name string, p page) {
 }
 
 func (a *Admin) overview(flash string) page {
-	return page{Title: "Clearing house", Adapters: a.Store.Adapters(), Devices: a.Store.Devices(), Requests: a.Store.Requests(), Flash: flash}
+	return page{Title: "Clearing house", Users: a.Store.Users(), Adapters: a.Store.Adapters(), Devices: a.Store.Devices(),
+		Requests: a.Store.Requests(), Flash: flash}
 }
 
 func (a *Admin) index(w http.ResponseWriter, _ *http.Request) {
 	a.render(w, "index.html", a.overview(""))
 }
 
-// enroll issues a code and sends the browser to its own page, which follows it until a phone uses it.
+// enroll issues a code for a user (form: user, mode new|join) and sends the browser to its own page, which follows
+// it until a phone uses it.
 func (a *Admin) enroll(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
-	code, id, err := a.Store.NewEnrollCode(now)
+	user, mode := strings.TrimSpace(r.FormValue("user")), r.FormValue("mode")
+	code, id, err := a.Store.NewEnrollCode(now, user, mode)
 	if err != nil {
 		a.render(w, "index.html", a.overview(err.Error()))
 		return
 	}
-	link := "wga://enroll?hub=" + url.QueryEscape(a.HubURL) + "&code=" + url.QueryEscape(code)
+	link := "wga://enroll?hub=" + url.QueryEscape(a.HubURL) + "&code=" + url.QueryEscape(code) +
+		"&user=" + url.QueryEscape(user) + "&mode=" + mode
 	a.linksMu.Lock()
 	if a.links == nil {
 		a.links = map[string]string{}
 	}
 	a.links[id] = link // memory only: after a restart the page says to make a new code
 	a.linksMu.Unlock()
-	a.write(audit.Event{Time: now, Event: "enroll-code-issued", Detail: "id " + id})
+	a.write(audit.Event{Time: now, Event: "enroll-code-issued", Requester: user, Detail: mode + " id " + id})
 	http.Redirect(w, r, "/enroll/"+id, http.StatusSeeOther)
 }
 
+// enrollState fills in what the enroll page and its status box show for a code.
+func (a *Admin) enrollState(id string) (page, bool) {
+	s, ok := a.Store.EnrollStatus(id)
+	if !ok {
+		return page{}, false
+	}
+	p := page{Title: "Enroll a device", CodeID: id, Expiry: s.Expires, CodeUser: s.User, CodeMode: s.Mode}
+	if s.Device != "" {
+		if d, ok := a.Store.Device(s.Device); ok {
+			p.Enrolled = &d
+		}
+		for _, u := range a.Store.Users() {
+			if u.ID == s.User {
+				p.Account = u.Head.Account
+				_, p.Active = u.Head.Devices[s.Device]
+			}
+		}
+		return p, true
+	}
+	p.Expired = time.Now().After(s.Expires)
+	return p, true
+}
+
 // enrollPage shows the code (QR, link, simulator command) and a status box; once a phone has enrolled with it, it
-// shows that device's name and fingerprint, to compare with the phone. The page itself never reloads (the link must
-// stay selectable); the status box does.
+// shows that device's name and fingerprint, to compare with the phone, and what to do next. The page itself never
+// reloads (the link must stay selectable); the status box does.
 func (a *Admin) enrollPage(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	expires, devID, ok := a.Store.EnrollStatus(id)
+	p, ok := a.enrollState(id)
 	if !ok {
 		http.NotFound(w, r)
 		return
 	}
-	p := page{Title: "Enroll a device", Expiry: expires}
-	if devID != "" {
-		if d, ok := a.Store.Device(devID); ok {
-			p.Title, p.Enrolled = "Device enrolled", &d
+	if p.Enrolled != nil || p.Expired {
+		if p.Enrolled != nil {
+			p.Title = "Device enrolled"
 		}
-		a.forget(id)
-		a.render(w, "enroll.html", p)
-		return
-	}
-	if time.Now().After(expires) {
-		p.Expired = true
 		a.forget(id)
 		a.render(w, "enroll.html", p)
 		return
@@ -214,26 +238,16 @@ func (a *Admin) enrollPage(w http.ResponseWriter, r *http.Request) {
 			p.QR = template.URL("data:image/png;base64," + base64.StdEncoding.EncodeToString(c.PNG()))
 		}
 	}
-	p.CodeID = id
 	a.render(w, "enroll.html", p)
 }
 
-// enrollStatus is the enroll page's status box: it reloads itself every 3 s while the code is unused.
+// enrollStatus is the enroll page's status box: it reloads itself every 3 s until the device is in its user's
+// roster (a join waits for approval on another of the user's phones) or the code expired.
 func (a *Admin) enrollStatus(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	expires, devID, ok := a.Store.EnrollStatus(id)
+	p, ok := a.enrollState(r.PathValue("id"))
 	if !ok {
 		http.NotFound(w, r)
 		return
-	}
-	p := page{CodeID: id, Expiry: expires}
-	switch {
-	case devID != "":
-		if d, ok := a.Store.Device(devID); ok {
-			p.Enrolled = &d
-		}
-	case time.Now().After(expires):
-		p.Expired = true
 	}
 	w.Header().Set("Content-Security-Policy", cspFrame)
 	a.render(w, "enroll-status.html", p)
@@ -245,20 +259,10 @@ func (a *Admin) forget(id string) {
 	a.linksMu.Unlock()
 }
 
-func (a *Admin) card(w http.ResponseWriter, r *http.Request) {
-	d, ok := a.Store.Device(r.PathValue("id"))
-	if !ok {
-		http.NotFound(w, r)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Content-Disposition", `attachment; filename="device-`+d.ID+`.json"`)
-	_ = json.NewEncoder(w).Encode(d.Card)
-}
-
 func (a *Admin) revoke(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	flash := "Revoked " + id + " at the hub. Also remove it from every adapter: wga-adapter trust remove " + id
+	flash := "Revoked " + id + " at the hub: it gets nothing more from here. Adapters go by the user's roster: to take it off the " +
+		"account for good, remove it on another of the user's phones (Device tab → Devices on this account)."
 	if err := a.Store.RevokeDevice(id); err != nil {
 		flash = err.Error()
 	} else {

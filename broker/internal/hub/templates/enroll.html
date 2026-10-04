@@ -1,16 +1,26 @@
 {{define "enroll.html"}}{{template "head" .}}
-{{if .Enrolled}}{{with .Enrolled}}
-<p><strong>{{.Name}}</strong> enrolled. Its fingerprint:</p>
-<p class="mono" style="font-size: 2rem; font-weight: 700; letter-spacing: .05em">{{cardfp .Card}}</p>
-<p>The phone shows the same fingerprint (on the Enrolled screen, and on its Device tab). <strong>They must match</strong>; if they
-do not, revoke this device on the <a href="/#devices">overview</a>.</p>
-<h2>Next: let adapters send it requests</h2>
-<p>Download the <a href="/devices/{{.ID}}/card.json">card.json</a>, then on each adapter's host:</p>
-<pre class="mono" style="white-space: pre-wrap; padding: .6rem; background: #8881">wga-adapter trust add -dir &lt;adapter dir&gt; device-{{.ID}}.json</pre>
-<p class="muted">It prints the fingerprint again: compare it once more. Until then this device receives nothing.</p>
+<p>{{if eq .CodeMode "new"}}First phone of the new user <strong>{{.CodeUser}}</strong>.{{else}}Another phone for
+<strong>{{.CodeUser}}</strong>: once it enrolls, approve it on one of {{.CodeUser}}'s existing phones.{{end}}</p>
+{{if .Enrolled}}
+<p><strong>{{.Enrolled.Name}}</strong> enrolled. Its device fingerprint:</p>
+<p class="mono" style="font-size: 2rem; font-weight: 700; letter-spacing: .05em">{{cardfp .Enrolled.Card}}</p>
+<p>The phone shows the same fingerprint. <strong>They must match</strong>; if not, revoke it on the <a href="/#devices">overview</a>.</p>
+{{if not .Active}}
+<iframe src="/enroll/{{.CodeID}}/status" title="approval status"
+  style="width: 100%; height: 8.5rem; border: 1px solid #8884; border-radius: 6px"></iframe>
+{{else if eq .CodeMode "new"}}
+<h2>Next: tell adapters to trust {{.CodeUser}}</h2>
+<p>Account fingerprint (the phone shows it too): <span class="mono" style="font-weight: 600">{{.Account}}</span></p>
+<p>On each adapter's host that should send {{.CodeUser}} requests:</p>
+<pre class="mono" style="white-space: pre-wrap; padding: .6rem; background: #8881">wga-adapter trust add-user -dir &lt;adapter dir&gt; {{.CodeUser}} {{.Account}}</pre>
+<p class="muted">Once per user per adapter. Phones {{.CodeUser}} adds later are picked up automatically.</p>
+{{else}}
+<p class="ok">Approved: it is on {{.CodeUser}}'s roster. Adapters that trust {{.CodeUser}} send it requests from now on.</p>
 {{end}}
 {{else if .Expired}}
-<div>This code expired unused. <form class="inline" method="post" action="/enroll"><button>Make a new one</button></form></div>
+<form method="post" action="/enroll">This code expired unused.
+  <input type="hidden" name="user" value="{{.CodeUser}}"><input type="hidden" name="mode" value="{{.CodeMode}}">
+  <button>Make a new one</button></form>
 {{else if .Link}}
 <p>Scan with the iPhone camera (opens the Approver app), or paste the link into the app's Enroll screen.
 The code works once and expires at {{.Expiry.Local.Format "15:04:05"}}.</p>
@@ -21,8 +31,9 @@ The code works once and expires at {{.Expiry.Local.Format "15:04:05"}}.</p>
 <p>iOS simulator (it has no camera, and pasting needs the pasteboard synced): run this on the Mac, then click Open.</p>
 <pre class="mono" style="white-space: pre-wrap; word-break: break-all; padding: .6rem; background: #8881">xcrun simctl openurl booted '{{.Link}}'</pre>
 {{else}}
-<div>This code was issued before the hub restarted, so its link is gone (codes are never written to disk).
-<form class="inline" method="post" action="/enroll"><button>Make a new one</button></form></div>
+<form method="post" action="/enroll">This code was issued before the hub restarted, so its link is gone (codes are never
+  written to disk). <input type="hidden" name="user" value="{{.CodeUser}}"><input type="hidden" name="mode" value="{{.CodeMode}}">
+  <button>Make a new one</button></form>
 {{end}}
 <p><a href="/">Back to overview</a></p>
 {{template "foot" .}}{{end}}

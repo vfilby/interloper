@@ -29,6 +29,11 @@ make e2e-ui    # real app in the iOS simulator against a live hub and demo adapt
 make dist      # tests, then deploy/broker for linux/arm64 (bastion)
 ```
 
+Trust is per **user**. Each user has a device list (roster) signed by their own phones, and a new phone is approved on
+an existing one with Face ID. Each adapter trusts a user once:
+`wga-adapter trust add-user <user> <account fingerprint>`. The hub hands out enrollment codes but cannot add a device
+to anyone.
+
 Status:
 - Phase 1 is live.
 - The clearing-house skeleton is built and tested, on LAN only.

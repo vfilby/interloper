@@ -35,27 +35,32 @@ sleep 1
 curl -sf localhost:18749/requests -d '{"requester":"claude","title":"claude wants RW on build-01","risk":"elevated","reason":"fix the backups","facts":[{"label":"Host","value":"build-01"},{"label":"Access","value":"RW","level":"warn"},{"label":"Duration","value":"2h"}]}' >/dev/null
 curl -sf localhost:18749/requests -d '{"requester":"helper","title":"helper wants ADMIN on n","risk":"high","reason":"rotate certs ‮(bidi trick)","facts":[{"label":"Host","value":"n"},{"label":"Access","value":"ADMIN","level":"danger"}],"on_behalf_of":{"principal":"slack:U0123","display":"Kim","attested_by":"agent@agent-host"}}' >/dev/null
 
-newlink() { curl -sfL -d "" localhost:18741/enroll -H 'Sec-Fetch-Site: same-origin' | grep -o 'wga://enroll[^<"'"'"']*' | head -1 | sed 's/&amp;/\&/g'; }
-LINK=$(newlink)
-LINK2=$(newlink)  # for re-enrolling from the Device tab
+newlink() { curl -sfL localhost:18741/enroll -H 'Sec-Fetch-Site: same-origin' --data-urlencode "user=$1" --data-urlencode "mode=$2" \
+  | grep -o 'wga://enroll[^<"'"'"']*' | head -1 | sed 's/&amp;/\&/g'; }
+LINK=$(newlink vince new)  # the simulator becomes vince's first phone; the test asks for a join code itself later
 xcrun simctl uninstall booted com.example.approver 2>/dev/null || true
 xcrun simctl keychain booted reset  # the simulator keychain outlives an uninstall: start unenrolled
 
 echo "== starting UI test"
-( cd "$IOS" && TEST_RUNNER_WGA_ENROLL_LINK="$LINK" TEST_RUNNER_WGA_ENROLL_LINK2="$LINK2" xcodebuild -project Approver.xcodeproj -scheme Approver \
+( cd "$IOS" && TEST_RUNNER_WGA_ENROLL_LINK="$LINK" TEST_RUNNER_WGA_ADMIN_URL="http://127.0.0.1:18741" xcodebuild -project Approver.xcodeproj -scheme Approver \
     -destination "$DEST" -derivedDataPath build \
     -resultBundlePath "$S/ui.xcresult" test-without-building CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual > "$S/xcodebuild.log" 2>&1 ) &
 XT=$!
 
-echo "== waiting for the app to enroll, then trusting its card at the adapter (the admin step)"
+echo "== waiting for the app to create user vince, then trusting vince at the adapter (the admin step)"
+account() { python3 -c '
+import base64, hashlib, json
+u = json.load(open("hub-data/state.json")).get("users", {}).get("vince")
+p = u["chain"][0]["payload"]; p += "=" * (-len(p) % 4)
+h = hashlib.sha256(base64.urlsafe_b64decode(p)).hexdigest()[:32]
+print("-".join(h[i:i+4] for i in range(0, 32, 4)))' 2>/dev/null || true; }
 for i in $(seq 1 120); do
-  DEV=$(python3 -c 'import json; d=json.load(open("hub-data/state.json")).get("devices",{}); print(next(iter(d),""))' 2>/dev/null || true)
-  [ -n "$DEV" ] && break
+  ACCOUNT=$(account)
+  [ -n "$ACCOUNT" ] && break
   sleep 1
 done
-[ -n "$DEV" ] || { echo "app never enrolled"; tail -30 xcodebuild.log; exit 1; }
-curl -sf "localhost:18741/devices/$DEV/card.json" > card.json
-"$B/wga-adapter" trust add -dir ad card.json
+[ -n "$ACCOUNT" ] || { echo "app never enrolled"; tail -30 xcodebuild.log; exit 1; }
+"$B/wga-adapter" trust add-user -dir ad vince "$ACCOUNT"
 
 wait $XT && echo "UI TEST PASSED" || { echo "UI TEST FAILED"; grep -E "error|fail|XCT" xcodebuild.log | head -30; }
 echo "== service-side outcome"

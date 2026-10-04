@@ -2,8 +2,11 @@
 // app. Its private keys are in a file: it must never be trusted by an adapter guarding anything real.
 //
 //	wga-device init    -f dev.json -name "test device"
-//	wga-device enroll  -f dev.json 'wga://enroll?hub=…&code=…'   (pins the hub's adapter keys, first use)
-//	wga-device card    -f dev.json > card.json                   (for `wga-adapter trust add`)
+//	wga-device enroll  -f dev.json 'wga://enroll?hub=…&code=…&user=…&mode=new|join'
+//	wga-device roster  -f dev.json                 (the user's verified devices; prints the account fingerprint)
+//	wga-device joins   -f dev.json                 (devices asking to join this user)
+//	wga-device admit   -f dev.json DEVICE_ID       (approve a join: sign the next roster with it)
+//	wga-device remove  -f dev.json DEVICE_ID       (sign the next roster without it)
 //	wga-device list    -f dev.json
 //	wga-device approve -f dev.json REQUEST_ID
 //	wga-device deny    -f dev.json REQUEST_ID
@@ -24,16 +27,18 @@ import (
 	"warpgate-approver/broker/internal/softdevice"
 )
 
-// session is what the device keeps besides its keys: the hub, its token and the pinned adapter keys.
+// session is what the device keeps besides its keys: the hub, its token, the pinned adapter keys, and what it knows
+// of its user's roster.
 type session struct {
 	Hub      string            `json:"hub"`
 	Token    string            `json:"token"`
 	Adapters map[string]string `json:"adapters"` // id -> b64 Ed25519 key, pinned on first use
+	Roster   softdevice.Known  `json:"roster"`
 }
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: wga-device init|enroll|card|list|approve|deny|acks -f dev.json …")
+		fmt.Fprintln(os.Stderr, "usage: wga-device init|enroll|roster|joins|admit|remove|list|approve|deny|acks -f dev.json …")
 		os.Exit(2)
 	}
 	fs := flag.NewFlagSet(os.Args[1], flag.ExitOnError)
@@ -70,13 +75,6 @@ func run(cmd, file, name string, args []string) error {
 	client := &softdevice.Client{Base: sess.Hub, Token: sess.Token}
 
 	switch cmd {
-	case "card":
-		c, err := d.Card(time.Now())
-		if err != nil {
-			return err
-		}
-		return json.NewEncoder(os.Stdout).Encode(c)
-
 	case "enroll":
 		if len(args) != 1 {
 			return errors.New("enroll needs the wga://enroll link")
@@ -85,20 +83,129 @@ func run(cmd, file, name string, args []string) error {
 		if err != nil || u.Scheme != "wga" || u.Host != "enroll" {
 			return errors.New("not a wga://enroll link")
 		}
-		client = &softdevice.Client{Base: u.Query().Get("hub")}
-		c, err := d.Card(time.Now())
+		q := u.Query()
+		user, mode := q.Get("user"), q.Get("mode")
+		client = &softdevice.Client{Base: q.Get("hub")}
+		now := time.Now()
+		c, err := d.Card(now)
 		if err != nil {
 			return err
 		}
-		id, err := client.Enroll(ctx, u.Query().Get("code"), c)
+		var genesis *protocol.Envelope
+		switch mode {
+		case "new":
+			g, err := d.Genesis(user, now)
+			if err != nil {
+				return err
+			}
+			genesis = &g
+		case "join":
+		default:
+			return errors.New("the link has no mode: ask for a new code")
+		}
+		res, err := client.Enroll(ctx, q.Get("code"), c, genesis)
 		if err != nil {
 			return err
 		}
-		sess = session{Hub: client.Base, Token: client.Token, Adapters: map[string]string{}}
+		sess = session{Hub: client.Base, Token: client.Token, Adapters: map[string]string{}, Roster: softdevice.Known{User: res.User}}
 		if err := pin(ctx, client, &sess); err != nil {
 			return err
 		}
-		fmt.Printf("enrolled as %s; approve key fingerprint %s\n", id, protocol.Fingerprint(mustPub(d)))
+		fmt.Printf("enrolled as %s for user %s (%s); device fingerprint %s\n", res.DeviceID, res.User, res.Status, protocol.Fingerprint(mustPub(d)))
+		if res.Status == "active" {
+			h, err := adopt(ctx, client, &sess)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("account fingerprint %s\n", h.Account)
+		} else {
+			fmt.Printf("waiting for approval on another of %s's devices: compare the device fingerprint there\n", res.User)
+		}
+		return saveSession(file, sess)
+
+	case "roster":
+		h, err := adopt(ctx, client, &sess)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("user %s  account %s  roster v%d\n", h.Roster.User, h.Account, h.Roster.Seq)
+		for id, c := range h.Devices {
+			ak, _ := protocol.UnB64(c.ApproveKey)
+			me := ""
+			if id == d.ID() {
+				me = "  (this device)"
+			}
+			fmt.Printf("    %s  %s  %q%s\n", id, protocol.Fingerprint(ak), c.Name, me)
+		}
+		if _, in := h.Devices[d.ID()]; !in {
+			fmt.Println("this device is not on the roster (waiting for approval, or removed)")
+		}
+		return saveSession(file, sess)
+
+	case "joins":
+		js, err := client.Joins(ctx)
+		if err != nil {
+			return err
+		}
+		for _, j := range js {
+			c, err := protocol.VerifyCard(j.Card)
+			if err != nil {
+				fmt.Printf("%s  REFUSED: %v\n", j.DeviceID, err)
+				continue
+			}
+			ak, _ := protocol.UnB64(c.ApproveKey)
+			fmt.Printf("%s  %s  %q\n", c.DeviceID, protocol.Fingerprint(ak), c.Name)
+		}
+		if len(js) == 0 {
+			fmt.Println("no join requests")
+		}
+		return nil
+
+	case "admit", "remove":
+		if len(args) != 1 {
+			return errors.New("needs a device id")
+		}
+		h, err := adopt(ctx, client, &sess) // build only on our own verified copy of the chain
+		if err != nil {
+			return err
+		}
+		var next protocol.Envelope
+		if cmd == "admit" {
+			js, err := client.Joins(ctx)
+			if err != nil {
+				return err
+			}
+			var card *protocol.Envelope
+			for _, j := range js {
+				if j.DeviceID == args[0] && j.Card.Kid == args[0] {
+					card = &j.Card
+				}
+			}
+			if card == nil {
+				return fmt.Errorf("no join request from %s", args[0])
+			}
+			if next, err = d.Admit(h, *card, time.Now()); err != nil {
+				return err
+			}
+		} else {
+			if _, ok := h.Devices[args[0]]; !ok {
+				return fmt.Errorf("%s is not on the roster", args[0])
+			}
+			if len(h.Devices) == 1 {
+				return errors.New("cannot remove the last device")
+			}
+			if next, err = d.Remove(h, args[0], time.Now()); err != nil {
+				return err
+			}
+		}
+		if err := client.PostRoster(ctx, next); err != nil {
+			return err
+		}
+		h, err = adopt(ctx, client, &sess)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("roster v%d: %d devices\n", h.Roster.Seq, len(h.Devices))
 		return saveSession(file, sess)
 
 	case "list":
@@ -170,6 +277,20 @@ func run(cmd, file, name string, args []string) error {
 		return nil
 	}
 	return fmt.Errorf("unknown command %q", cmd)
+}
+
+// adopt fetches the user's chain and checks it against what this device knows (pin, no rollback, no fork).
+func adopt(ctx context.Context, c *softdevice.Client, s *session) (protocol.Head, error) {
+	chain, err := c.Roster(ctx)
+	if err != nil {
+		return protocol.Head{}, err
+	}
+	h, k, err := softdevice.Adopt(chain, s.Roster)
+	if err != nil {
+		return h, fmt.Errorf("roster refused: %w", err)
+	}
+	s.Roster = k
+	return h, nil
 }
 
 func open(d *softdevice.Device, sess session, r softdevice.HubRequest) (softdevice.Opened, error) {

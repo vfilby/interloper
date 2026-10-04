@@ -3,6 +3,7 @@ package hub
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -38,7 +39,7 @@ func TestAdminCSRF(t *testing.T) {
 		{"old browser, Origin null", map[string]string{"Origin": "null"}, http.StatusForbidden},
 	}
 	for _, c := range cases {
-		req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:8741/enroll", nil)
+		req := newUserForm("vince")
 		for k, v := range c.headers {
 			req.Header.Set(k, v)
 		}
@@ -50,8 +51,21 @@ func TestAdminCSRF(t *testing.T) {
 	}
 }
 
-// The enroll page follows its code: QR and self-refresh while waiting, then the device and its fingerprint.
-func TestEnrollPageShowsFingerprint(t *testing.T) {
+// newUserForm is the overview's "New user" form post.
+func newUserForm(user string) *http.Request {
+	return enrollForm(user, ModeNew)
+}
+
+func enrollForm(user, mode string) *http.Request {
+	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:8741/enroll",
+		strings.NewReader(url.Values{"user": {user}, "mode": {mode}}.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	return req
+}
+
+// The enroll page follows its code: a new user's first phone (device and account fingerprints, the trust-add-user
+// command), then a second phone that waits for approval and is shown as approved once a phone on the roster admits it.
+func TestEnrollPageFollowsTheCode(t *testing.T) {
 	st, err := Open(filepath.Join(t.TempDir(), "state.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -62,52 +76,83 @@ func TestEnrollPageShowsFingerprint(t *testing.T) {
 		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "http://127.0.0.1:8741"+path, nil))
 		return rec.Code, rec.Body.String()
 	}
+	issue := func(req *http.Request) (loc, code string) {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		loc = rec.Header().Get("Location")
+		if rec.Code != http.StatusSeeOther || !strings.HasPrefix(loc, "/enroll/") {
+			t.Fatalf("POST /enroll: %d %q\n%s", rec.Code, loc, rec.Body.String())
+		}
+		_, body := get(loc)
+		if strings.Contains(body, `http-equiv="refresh"`) {
+			t.Fatal("the enroll page itself reloads: the link cannot be copied")
+		}
+		m := regexp.MustCompile(`code=([A-Za-z0-9_-]+)&amp;user=([a-z0-9._-]+)&amp;mode=(new|join)`).FindStringSubmatch(body)
+		if m == nil {
+			t.Fatalf("no code/user/mode in the page\n%s", body)
+		}
+		return loc, m[1]
+	}
+	now := time.Now()
 
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "http://127.0.0.1:8741/enroll", nil))
-	loc := rec.Header().Get("Location")
-	if rec.Code != http.StatusSeeOther || !strings.HasPrefix(loc, "/enroll/") {
-		t.Fatalf("POST /enroll: %d %q", rec.Code, loc)
+	// First phone of a new user.
+	loc, code := issue(newUserForm("vince"))
+	if _, status := get(loc + "/status"); !strings.Contains(status, `http-equiv="refresh"`) || !strings.Contains(status, "Waiting") {
+		t.Fatalf("status box while waiting:\n%s", status)
 	}
-	code, body := get(loc)
-	if code != http.StatusOK || !strings.Contains(body, "wga://enroll?") || !strings.Contains(body, `src="`+loc+`/status"`) {
-		t.Fatalf("waiting page: %d\n%s", code, body)
-	}
-	if strings.Contains(body, `http-equiv="refresh"`) {
-		t.Fatal("the enroll page itself reloads: the link cannot be copied")
-	}
-	code, status := get(loc + "/status")
-	if code != http.StatusOK || !strings.Contains(status, `http-equiv="refresh"`) || !strings.Contains(status, "Waiting") {
-		t.Fatalf("status box while waiting: %d\n%s", code, status)
-	}
-	m := regexp.MustCompile(`code=([A-Za-z0-9_-]+)`).FindStringSubmatch(body)
-	if m == nil {
-		t.Fatal("no code in the page")
-	}
-
-	d, _ := softdevice.New("test phone")
-	card, _ := d.Card(time.Now())
-	if _, _, err := st.Enroll(m[1], card, time.Now()); err != nil {
+	a, _ := softdevice.New("phone A")
+	cardA, _ := a.Card(now)
+	genesis, _ := a.Genesis("vince", now)
+	if _, err := st.Enroll(code, cardA, &genesis, now); err != nil {
 		t.Fatal(err)
 	}
-	pub, _ := d.Approve.PublicKey.Bytes()
-	code, body = get(loc)
-	if code != http.StatusOK || !strings.Contains(body, protocol.Fingerprint(pub)) || !strings.Contains(body, "test phone") {
-		t.Fatalf("enrolled page lacks the device or its fingerprint: %d\n%s", code, body)
+	head, _ := protocol.VerifyChain([]protocol.Envelope{genesis}, "vince", "")
+	pubA, _ := a.Approve.PublicKey.Bytes()
+	_, body := get(loc)
+	for _, want := range []string{protocol.Fingerprint(pubA), head.Account, "trust add-user", "phone A"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("new-user page lacks %q\n%s", want, body)
+		}
 	}
-	if strings.Contains(body, "wga://enroll?") {
-		t.Fatal("enrolled page still shows the spent code")
-	}
-	rec = httptest.NewRecorder()
+	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "http://127.0.0.1:8741"+loc+"/status", nil))
-	status = rec.Body.String()
-	if !strings.Contains(status, protocol.Fingerprint(pub)) || strings.Contains(status, `http-equiv="refresh"`) {
-		t.Fatalf("status box after enrolling: want the fingerprint and no more reloading\n%s", status)
+	if strings.Contains(rec.Body.String(), `http-equiv="refresh"`) {
+		t.Fatal("status box keeps reloading after a new user's phone enrolled")
 	}
 	if csp := rec.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "frame-ancestors 'self'") {
-		t.Fatalf("status box CSP %q: must be frameable by this site only", csp)
+		t.Fatalf("status box CSP %q", csp)
 	}
+
+	// A second phone joins: it waits until phone A admits it.
+	loc, code = issue(enrollForm("vince", ModeJoin))
+	b, _ := softdevice.New("phone B")
+	cardB, _ := b.Card(now)
+	if e, err := st.Enroll(code, cardB, nil, now); err != nil || e.Active {
+		t.Fatalf("join: %+v %v", e, err)
+	}
+	_, status := get(loc + "/status")
+	if !strings.Contains(status, "waiting for approval") || !strings.Contains(status, `http-equiv="refresh"`) {
+		t.Fatalf("pending join status:\n%s", status)
+	}
+	next, _ := a.Admit(head, cardB, now)
+	if _, err := st.AppendRoster("vince", next); err != nil {
+		t.Fatal(err)
+	}
+	_, status = get(loc + "/status")
+	if strings.Contains(status, `http-equiv="refresh"`) || !strings.Contains(status, "is on vince's roster") {
+		t.Fatalf("approved join status:\n%s", status)
+	}
+
 	if code, _ := get("/enroll/unknown"); code != http.StatusNotFound {
 		t.Fatalf("unknown id: %d", code)
+	}
+	// The overview lists the user with its account fingerprint and both phones.
+	_, body = get("/")
+	pubB, _ := b.Approve.PublicKey.Bytes()
+	for _, want := range []string{head.Account, protocol.Fingerprint(pubA), protocol.Fingerprint(pubB), "roster v2"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("overview lacks %q", want)
+		}
 	}
 }

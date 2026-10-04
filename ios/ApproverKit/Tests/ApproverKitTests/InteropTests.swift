@@ -135,12 +135,19 @@ final class InteropTests: XCTestCase {
         XCTAssertEqual(sanitize("  many   spaces \r\n"), "many spaces")
     }
 
-    func testEnrollmentLink() {
-        let l = EnrollmentLink("wga://enroll?hub=http%3A%2F%2F127.0.0.1%3A8740&code=ABC123")
+    func testEnrollmentLink() throws {
+        let l = EnrollmentLink("wga://enroll?hub=http%3A%2F%2F127.0.0.1%3A8740&code=ABC123&user=vince&mode=join")
         XCTAssertEqual(l?.hub.absoluteString, "http://127.0.0.1:8740")
         XCTAssertEqual(l?.code, "ABC123")
-        XCTAssertNil(EnrollmentLink("https://evil/enroll?hub=x&code=y"))
-        XCTAssertNil(EnrollmentLink("wga://enroll?hub=file%3A%2F%2F%2Fetc&code=y"))
+        XCTAssertEqual(l?.user, "vince")
+        XCTAssertEqual(l?.mode, .join)
+        XCTAssertNil(EnrollmentLink("https://evil/enroll?hub=x&code=y&user=v&mode=new"))
+        XCTAssertNil(EnrollmentLink("wga://enroll?hub=file%3A%2F%2F%2Fetc&code=y&user=v&mode=new"))
+        XCTAssertThrowsError(try EnrollmentLink(parsing: "wga://enroll?hub=http%3A%2F%2Fh&code=ABC")) { err in
+            XCTAssertEqual(err as? EnrollmentLink.LinkError, .old)
+        }
+        XCTAssertNil(EnrollmentLink("wga://enroll?hub=http%3A%2F%2Fh&code=ABC&user=Vince&mode=new"), "user ids are lower-case")
+        XCTAssertNil(EnrollmentLink("wga://enroll?hub=http%3A%2F%2Fh&code=ABC&user=v&mode=admin"))
     }
 
     func testFingerprint() {

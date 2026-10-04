@@ -42,13 +42,15 @@ type Adapter struct {
 }
 
 type Device struct {
-	ID         string            `json:"id"`
-	Name       string            `json:"name"`
-	Card       protocol.Envelope `json:"card"`
-	TokenHash  string            `json:"token_hash"`
-	EnrolledAt time.Time         `json:"enrolled_at"`
-	LastSeen   time.Time         `json:"last_seen,omitzero"`
-	Revoked    bool              `json:"revoked,omitempty"`
+	ID            string            `json:"id"`
+	Name          string            `json:"name"`
+	Card          protocol.Envelope `json:"card"`
+	TokenHash     string            `json:"token_hash"`
+	EnrolledAt    time.Time         `json:"enrolled_at"`
+	LastSeen      time.Time         `json:"last_seen,omitzero"`
+	Revoked       bool              `json:"revoked,omitempty"`
+	User          string            `json:"user,omitempty"`           // "" only for devices enrolled before accounts existed
+	JoinRequested bool              `json:"join_requested,omitempty"` // enrolled with a join code, not yet in the user's roster
 }
 
 type Request struct {
@@ -77,6 +79,8 @@ type enrollCode struct {
 	Hash    string    `json:"hash"`
 	Expires time.Time `json:"expires"`
 	Device  string    `json:"device,omitempty"` // set once spent: who enrolled with it (for the enroll page)
+	User    string    `json:"user"`
+	Mode    string    `json:"mode"`
 }
 
 // codeID names a code in URLs without revealing it: a prefix of the hash the hub keeps anyway.
@@ -88,6 +92,7 @@ type state struct {
 	Requests  map[string]*Request `json:"requests"` // adapter + "/" + id
 	Decisions []QueuedDecision    `json:"decisions"`
 	Codes     []enrollCode        `json:"codes"`
+	Users     map[string]*User    `json:"users"`
 }
 
 // Store is the hub's state: in memory, written through to one JSON file. The file is bounded by the limits above.
@@ -100,7 +105,7 @@ type Store struct {
 
 func Open(path string) (*Store, error) {
 	st := &Store{path: path, changed: make(chan struct{}),
-		s: state{Adapters: map[string]*Adapter{}, Devices: map[string]*Device{}, Requests: map[string]*Request{}}}
+		s: state{Adapters: map[string]*Adapter{}, Devices: map[string]*Device{}, Requests: map[string]*Request{}, Users: map[string]*User{}}}
 	b, err := os.ReadFile(path)
 	switch {
 	case errors.Is(err, os.ErrNotExist):
@@ -118,6 +123,9 @@ func Open(path string) (*Store, error) {
 		}
 		if st.s.Requests == nil {
 			st.s.Requests = map[string]*Request{}
+		}
+		if st.s.Users == nil {
+			st.s.Users = map[string]*User{}
 		}
 	}
 	return st, nil
@@ -229,12 +237,48 @@ func (st *Store) Adapters() []Adapter {
 	return out
 }
 
-// ---- devices ----
+// ---- users, devices, enrollment ----
 
-// NewEnrollCode returns a one-time enrollment code and an id for following it (EnrollStatus).
-func (st *Store) NewEnrollCode(now time.Time) (code, id string, err error) {
+const (
+	ModeNew  = "new"  // the code makes the first device of a new user, which brings the user's genesis roster
+	ModeJoin = "join" // the code adds a device to an existing user, pending approval on one of the user's devices
+)
+
+// User is an account: its roster chain, as posted by its devices. The hub checks each roster extends the chain so
+// it does not store garbage, but nothing trusts the hub for that: adapters and devices verify the chain themselves.
+type User struct {
+	ID        string              `json:"id"`
+	Chain     []protocol.Envelope `json:"chain"`
+	CreatedAt time.Time           `json:"created_at"`
+}
+
+// UserView is a user with its verified head, for the UI and the API.
+type UserView struct {
+	User
+	Head    protocol.Head
+	Pending []Device // devices that enrolled with a join code and are not in the head yet
+}
+
+func (st *Store) head(u *User) (protocol.Head, error) {
+	return protocol.VerifyChain(u.Chain, u.ID, "")
+}
+
+// NewEnrollCode returns a one-time enrollment code for a user and mode, and an id for following it (EnrollStatus).
+func (st *Store) NewEnrollCode(now time.Time, user, mode string) (code, id string, err error) {
+	if !protocol.ValidUserID(user) {
+		return "", "", errors.New("user id: 1-40 of a-z 0-9 . _ -")
+	}
 	st.mu.Lock()
 	defer st.mu.Unlock()
+	_, exists := st.s.Users[user]
+	switch {
+	case mode == ModeNew && exists:
+		return "", "", fmt.Errorf("user %s exists: add a device to it instead", user)
+	case mode == ModeJoin && !exists:
+		return "", "", fmt.Errorf("no user %s: create it first", user)
+	case mode != ModeNew && mode != ModeJoin:
+		return "", "", fmt.Errorf("mode %q", mode)
+	}
 	code, h := NewSecret()
 	keep := st.s.Codes[:0]
 	open := 0
@@ -251,27 +295,44 @@ func (st *Store) NewEnrollCode(now time.Time) (code, id string, err error) {
 	if open >= 10 {
 		return "", "", errors.New("too many open enrollment codes; wait for them to expire")
 	}
-	st.s.Codes = append(st.s.Codes, enrollCode{Hash: h, Expires: now.Add(EnrollCodeTTL)})
+	st.s.Codes = append(st.s.Codes, enrollCode{Hash: h, Expires: now.Add(EnrollCodeTTL), User: user, Mode: mode})
 	return code, codeID(h), st.commit()
 }
 
-// EnrollStatus reports on a code by id: when it expires, and the device that used it ("" while unused).
-func (st *Store) EnrollStatus(id string) (expires time.Time, device string, ok bool) {
+// EnrollStatus reports on a code by id.
+type EnrollStatus struct {
+	Expires time.Time
+	User    string
+	Mode    string
+	Device  string // "" while unused
+}
+
+func (st *Store) EnrollStatus(id string) (EnrollStatus, bool) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	for _, c := range st.s.Codes {
 		if codeID(c.Hash) == id {
-			return c.Expires, c.Device, true
+			return EnrollStatus{Expires: c.Expires, User: c.User, Mode: c.Mode, Device: c.Device}, true
 		}
 	}
-	return time.Time{}, "", false
+	return EnrollStatus{}, false
 }
 
-// Enroll spends a code and registers the device card. Returns the device's hub token.
-func (st *Store) Enroll(code string, card protocol.Envelope, now time.Time) (protocol.DeviceCard, string, error) {
+// Enrolled is the outcome of Enroll.
+type Enrolled struct {
+	Card   protocol.DeviceCard
+	Token  string
+	User   string
+	Active bool // in the user's head roster; false: a join waiting for approval
+}
+
+// Enroll spends a code and registers the device. A `new` code needs the user's genesis roster, containing this card
+// and signed by it; a `join` code must come without one. A device already in the user's head (it left this hub, or
+// the hub was reset) is simply active again: the code is admin-issued and the card is signed by the same key.
+func (st *Store) Enroll(code string, card protocol.Envelope, genesis *protocol.Envelope, now time.Time) (Enrolled, error) {
 	c, err := protocol.VerifyCard(card)
 	if err != nil {
-		return c, "", err
+		return Enrolled{}, err
 	}
 	st.mu.Lock()
 	defer st.mu.Unlock()
@@ -282,15 +343,126 @@ func (st *Store) Enroll(code string, card protocol.Envelope, now time.Time) (pro
 		}
 	}
 	if idx < 0 {
-		return c, "", errors.New("enrollment code unknown, used or expired")
+		return Enrolled{}, errors.New("enrollment code unknown, used or expired")
 	}
+	ec := st.s.Codes[idx]
+	if d, ok := st.s.Devices[c.DeviceID]; ok && d.User != "" && d.User != ec.User {
+		return Enrolled{}, fmt.Errorf("this device belongs to user %s", d.User)
+	}
+
+	out := Enrolled{Card: c, User: ec.User}
+	switch ec.Mode {
+	case ModeNew:
+		if genesis == nil {
+			return Enrolled{}, errors.New("a new-user code needs the genesis roster")
+		}
+		if _, ok := st.s.Users[ec.User]; ok {
+			return Enrolled{}, fmt.Errorf("user %s exists", ec.User)
+		}
+		h, err := protocol.VerifyChain([]protocol.Envelope{*genesis}, ec.User, "")
+		if err != nil {
+			return Enrolled{}, err
+		}
+		if _, ok := h.Devices[c.DeviceID]; !ok || genesis.Kid != c.DeviceID {
+			return Enrolled{}, errors.New("the genesis roster must contain and be signed by the enrolling device")
+		}
+		st.s.Users[ec.User] = &User{ID: ec.User, Chain: []protocol.Envelope{*genesis}, CreatedAt: now}
+		out.Active = true
+	case ModeJoin:
+		if genesis != nil {
+			return Enrolled{}, errors.New("a join code takes no genesis roster")
+		}
+		u, ok := st.s.Users[ec.User]
+		if !ok {
+			return Enrolled{}, fmt.Errorf("no user %s", ec.User)
+		}
+		h, err := st.head(u)
+		if err != nil {
+			return Enrolled{}, err
+		}
+		_, out.Active = h.Devices[c.DeviceID]
+	}
+
 	st.s.Codes[idx].Device = c.DeviceID // spent
-	// A device already known here (the phone left this hub and came back, or was revoked) is enrolled again: the admin
-	// issued a fresh code and the card is signed by the same key. The new token replaces the old one, which stops
-	// working. Adapters are unaffected: they trust the key, not the hub's record.
-	tok, h := NewSecret()
-	st.s.Devices[c.DeviceID] = &Device{ID: c.DeviceID, Name: c.Name, Card: card, TokenHash: h, EnrolledAt: now}
-	return c, tok, st.commit()
+	tok, th := NewSecret()
+	out.Token = tok
+	st.s.Devices[c.DeviceID] = &Device{ID: c.DeviceID, Name: c.Name, Card: card, TokenHash: th, EnrolledAt: now,
+		User: ec.User, JoinRequested: !out.Active}
+	return out, st.commit()
+}
+
+// Chain returns a user's roster chain.
+func (st *Store) Chain(user string) ([]protocol.Envelope, bool) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	u, ok := st.s.Users[user]
+	if !ok {
+		return nil, false
+	}
+	return append([]protocol.Envelope(nil), u.Chain...), true
+}
+
+// AppendRoster adds the next roster to a user's chain if it extends it. Devices it drops stop being served (their
+// tokens are cleared); devices it adds stop being join requests.
+func (st *Store) AppendRoster(user string, r protocol.Envelope) (protocol.Head, error) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	u, ok := st.s.Users[user]
+	if !ok {
+		return protocol.Head{}, ErrUnknown
+	}
+	old, err := st.head(u)
+	if err != nil {
+		return protocol.Head{}, err
+	}
+	h, err := protocol.Extend(old, r)
+	if err != nil {
+		return protocol.Head{}, err
+	}
+	u.Chain = append(u.Chain, r)
+	for id := range old.Devices {
+		if _, still := h.Devices[id]; !still {
+			if d, ok := st.s.Devices[id]; ok {
+				d.Revoked, d.TokenHash = true, ""
+			}
+		}
+	}
+	for id := range h.Devices {
+		if d, ok := st.s.Devices[id]; ok {
+			d.JoinRequested = false
+		}
+	}
+	return h, st.commit()
+}
+
+// Users lists accounts with their verified heads and pending joins.
+func (st *Store) Users() []UserView {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	out := make([]UserView, 0, len(st.s.Users))
+	for _, u := range st.s.Users {
+		v := UserView{User: *u}
+		v.Head, _ = st.head(u) // a chain the hub accepted verifies; a zero head shows as broken in the UI
+		for _, d := range st.s.Devices {
+			if d.User == u.ID && d.JoinRequested && !d.Revoked {
+				v.Pending = append(v.Pending, *d)
+			}
+		}
+		sort.Slice(v.Pending, func(i, j int) bool { return v.Pending[i].EnrolledAt.Before(v.Pending[j].EnrolledAt) })
+		out = append(out, v)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
+}
+
+// Joins lists a user's pending join requests.
+func (st *Store) Joins(user string) []Device {
+	for _, u := range st.Users() {
+		if u.ID == user {
+			return u.Pending
+		}
+	}
+	return nil
 }
 
 func (st *Store) DeviceByToken(tok string, now time.Time) (*Device, bool) {
@@ -534,3 +706,13 @@ func validID(s string) bool {
 
 // Path is the state file.
 func (st *Store) Path() string { return st.path }
+
+// ForceChain replaces a user's chain without checking it. Only for tests that play a hostile hub.
+func (st *Store) ForceChain(user string, chain []protocol.Envelope) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if u, ok := st.s.Users[user]; ok {
+		u.Chain = chain
+		_ = st.commit()
+	}
+}

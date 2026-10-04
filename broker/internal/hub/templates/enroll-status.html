@@ -2,20 +2,26 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-{{if not (or .Enrolled .Expired)}}<meta http-equiv="refresh" content="3">{{end}}
+{{if not (or .Active .Expired)}}<meta http-equiv="refresh" content="3">{{end}}
 <style>
   :root { color-scheme: light dark; }
   body { font: 15px/1.45 -apple-system, system-ui, sans-serif; margin: 0; padding: .7rem .9rem; }
   .fp { font: 700 1.6rem ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .05em; margin: .2rem 0; }
-  .muted { color: #8a8a8a; }
+  .muted { color: #8a8a8a; } .ok { color: #2f855a; } .warn { color: #b7791f; }
 </style>
 </head>
 <body>
-{{if .Enrolled}}{{with .Enrolled}}
-<div><strong>{{.Name}}</strong> enrolled. Fingerprint (must match the phone):</div>
-<div class="fp">{{cardfp .Card}}</div>
-<div><a href="/enroll/{{$.CodeID}}" target="_top">Next: trust it at the adapters →</a></div>
-{{end}}{{else if .Expired}}
+{{if .Enrolled}}
+  {{if .Active}}
+<div class="ok"><strong>{{.Enrolled.Name}}</strong> is on {{.CodeUser}}'s roster.</div>
+<div class="fp">{{cardfp .Enrolled.Card}}</div>
+<div><a href="/enroll/{{.CodeID}}" target="_top">Next steps →</a></div>
+  {{else}}
+<div class="warn"><strong>{{.Enrolled.Name}}</strong> enrolled; waiting for approval on one of {{.CodeUser}}'s phones…</div>
+<div class="fp">{{cardfp .Enrolled.Card}}</div>
+<div class="muted">The approving phone shows this fingerprint: compare. Checks every 3 s.</div>
+  {{end}}
+{{else if .Expired}}
 <div>This code expired unused. <a href="/" target="_top">Back to the overview</a> to make a new one.</div>
 {{else}}
 <div>Waiting for the phone to enroll… <span class="muted">(checks every 3 s; code expires {{.Expiry.Local.Format "15:04:05"}})</span></div>
