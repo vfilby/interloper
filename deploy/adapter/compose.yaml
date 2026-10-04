@@ -1,0 +1,27 @@
+# /opt/interloper-adapter on bastion: the Warpgate adapter of the Interloper clearing house, beside Warpgate.
+# Its own compose project, apart from Warpgate and the phase-1 broker; restarting it touches neither.
+#
+# It holds what can act: the Warpgate token (approve/deny ticket requests) and the trust list (which accounts' phones
+# may decide). It only connects out: to the hub (HUB_URL) and to Warpgate's API. Settings: .env (install.sh creates
+# it once from adapter.env.default and never overwrites it).
+name: interloper-adapter
+
+services:
+  adapter-warpgate:
+    build: .
+    image: interloper-adapter:local
+    restart: unless-stopped
+    user: "65533:65533" # not the phase-1 broker's 65532
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 64m
+    pids_limit: 64
+    command: [run, -id=warpgate, -source=warpgate, -dir=/data, "-hub=${HUB_URL:?set HUB_URL in .env}", -poll=5s]
+    env_file: [.env]
+    volumes:
+      - ./data:/data # signing key, hub-token, trust list, open records, audit.jsonl
+      - ./secrets/warpgate-token:/run/secrets/warpgate-token:ro
+    logging:
+      driver: json-file
+      options: {max-size: "5m", max-file: "3"}
