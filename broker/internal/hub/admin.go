@@ -5,6 +5,7 @@ import (
 	"embed"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"html/template"
 	"io"
 	"log/slog"
@@ -79,6 +80,8 @@ func (a *Admin) Handler() http.Handler {
 	m.HandleFunc("GET /app/hello", a.appHello)
 	m.HandleFunc("GET /app/enroll", a.appEnroll)
 	m.HandleFunc("POST /devices/{id}/revoke", a.revoke)
+	m.HandleFunc("POST /devices/remove-revoked", a.admin(a.removeRevoked))
+	m.HandleFunc("POST /users/{id}/delete", a.admin(a.deleteUser))
 	m.HandleFunc("POST /adapters", a.admin(a.addAdapter))
 	m.HandleFunc("POST /adapters/{id}/remove", a.admin(a.removeAdapter))
 	m.HandleFunc("GET /audit", a.admin(a.audit))
@@ -156,6 +159,7 @@ type page struct {
 	Title      string
 	Me         Identity
 	HasAccount bool // a non-admin who already has a user (offer "add a device", not "create")
+	HasRevoked bool // an admin sees revoked devices it can remove from the list
 	Users      []UserView
 	Adapters   []Adapter
 	Devices    []Device
@@ -191,6 +195,9 @@ func (a *Admin) overview(r *http.Request, flash string) page {
 	p := page{Title: "Clearing house", Me: me, Flash: flash}
 	if me.Admin {
 		p.Users, p.Adapters, p.Devices, p.Requests = a.Store.Users(), a.Store.Adapters(), a.Store.Devices(), a.Store.Requests()
+		for _, d := range p.Devices {
+			p.HasRevoked = p.HasRevoked || d.Revoked
+		}
 		return p
 	}
 	for _, u := range a.Store.Users() {
@@ -372,6 +379,36 @@ func (a *Admin) revoke(w http.ResponseWriter, r *http.Request) {
 		a.write(audit.Event{Time: time.Now(), Event: "device-revoked", Device: id})
 	}
 	a.render(w, "index.html", a.overview(r, flash))
+}
+
+func (a *Admin) removeRevoked(w http.ResponseWriter, r *http.Request) {
+	gone, err := a.Store.RemoveRevokedDevices()
+	flash := fmt.Sprintf("Removed %d revoked device(s) from the hub.", len(gone))
+	if err != nil {
+		flash = err.Error()
+	}
+	for _, id := range gone {
+		a.write(audit.Event{Time: time.Now(), Event: "device-removed", Device: id})
+	}
+	a.render(w, "index.html", a.overview(r, flash))
+}
+
+// deleteUser forgets an account at the hub. The form must repeat the user id, so a stray click cannot do it.
+func (a *Admin) deleteUser(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if strings.TrimSpace(r.FormValue("confirm")) != id {
+		a.render(w, "index.html", a.overview(r, "Not deleted: type the user id ("+id+") to confirm."))
+		return
+	}
+	gone, err := a.Store.DeleteUser(id)
+	if err != nil {
+		a.render(w, "index.html", a.overview(r, "Deleting "+id+": "+err.Error()))
+		return
+	}
+	a.write(audit.Event{Time: time.Now(), Event: "user-deleted", Target: id,
+		Detail: fmt.Sprintf("%d device(s): %s", len(gone), strings.Join(gone, " "))})
+	a.render(w, "index.html", a.overview(r, "Deleted account "+id+" and its "+fmt.Sprint(len(gone))+" device(s) at the hub. "+
+		"Enrolling "+id+" again creates a new account with a new fingerprint: adapters must run trust add-user for it again."))
 }
 
 func (a *Admin) addAdapter(w http.ResponseWriter, r *http.Request) {

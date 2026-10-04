@@ -25,11 +25,11 @@ struct ApproverApp: App {
                 .task {
                     let args = ProcessInfo.processInfo.arguments
                     if args.contains("-wgaReset") {
-                        model.reset()
+                        model.forgetLocally(deleteKeys: true)
                         UserDefaults.standard.removeObject(forKey: "signInAddress")
                     }
                     if let i = args.firstIndex(of: "-wgaAutoEnroll"), i + 1 < args.count, let link = EnrollmentLink(args[i + 1]) {
-                        model.reset()
+                        model.forgetLocally(deleteKeys: true)
                         await model.enroll(link, name: "Simulator UI test", pin: nil)
                     }
                 }

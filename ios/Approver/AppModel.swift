@@ -272,8 +272,15 @@ final class AppModel: ObservableObject {
         try await changeRoster { dev, head in try dev.remove(id, after: head, pin: pin) }
     }
 
-    /// Builds the next roster from this device's own freshly verified copy of the chain, never from the hub's say-so.
     private func changeRoster(_ build: @escaping @Sendable (Device, Head) throws -> Envelope) async throws {
+        guard let client else { throw ProtocolError.untrusted("no hub") }
+        try await client.postRoster(try await nextRoster(build))
+        await refreshRoster()
+    }
+
+    /// Builds and signs the next roster from this device's own freshly verified copy of the chain, never from the
+    /// hub's say-so.
+    private func nextRoster(_ build: @escaping @Sendable (Device, Head) throws -> Envelope) async throws -> Envelope {
         guard let client, let user, let account else { throw ProtocolError.untrusted("no pinned account") }
         let r = try await client.roster()
         let h = try verifyChain(r.chain, user: user, account: account)
@@ -282,8 +289,7 @@ final class AppModel: ObservableObject {
         let keys = self.keys
         let env = try await Task.detached { try build(Device(keys: keys), h) }.value
         _ = try extend(h, env) // check our own work before sending it
-        try await client.postRoster(env)
-        await refreshRoster()
+        return env
     }
 
     // MARK: inbox
@@ -371,15 +377,49 @@ final class AppModel: ObservableObject {
 
     // MARK: reset
 
-    /// Leaves the hub: token, hub URL, pins, account and everything seen through it. The device keys stay.
-    func leaveHub() {
-        forgetHub()
-        lastError = nil
+    /// What resetting (deleting the keys) does to the account, from the last verified roster.
+    enum ResetEffect { case none, removesThisDevice, deletesAccount }
+    var resetEffect: ResetEffect {
+        guard isEnrolled, membership == .member, let head, let me = try? device.deviceID(), head.devices[me] != nil else {
+            return .none
+        }
+        return head.devices.count == 1 ? .deletesAccount : .removesThisDevice
     }
 
-    /// Leaves the hub and deletes the device keys.
-    func reset() {
-        try? keys.reset()
+    /// Leaves the hub: the hub forgets this device (the roster stays, so it can come back with a join code), then the
+    /// app forgets the hub: token, hub URL, pins, account and everything seen through it. The device keys stay.
+    func leaveHub() async throws {
+        try await tellHubLeaving(LeavePost())
+        forgetLocally(deleteKeys: false)
+    }
+
+    /// Deletes the device keys, after taking this device off its account at the hub: a new roster without it (signed
+    /// here, Face ID), or, for the account's last device, deleting the account, which nothing could sign for again.
+    func reset(pin: String? = nil) async throws {
+        switch resetEffect {
+        case .none:
+            try await tellHubLeaving(LeavePost())
+        case .removesThisDevice:
+            let me = try device.deviceID()
+            let env = try await nextRoster { dev, head in try dev.remove(me, after: head, pin: pin) }
+            try await tellHubLeaving(LeavePost(roster: env))
+        case .deletesAccount:
+            try await tellHubLeaving(LeavePost(deleteAccount: true))
+        }
+        forgetLocally(deleteKeys: true)
+    }
+
+    /// A hub that no longer knows this device (401) has nothing to forget.
+    private func tellHubLeaving(_ l: LeavePost) async throws {
+        guard isEnrolled, let client else { return }
+        do {
+            try await client.leave(l)
+        } catch HubClient.HubError.http(401, _) {}
+    }
+
+    /// Forgets the hub on this phone only, without telling it (it is unreachable, or this is a UI test).
+    func forgetLocally(deleteKeys: Bool) {
+        if deleteKeys { try? keys.reset() }
         forgetHub()
         lastError = nil
     }

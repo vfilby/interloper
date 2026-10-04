@@ -151,4 +151,12 @@ final class RosterTests: XCTestCase {
         tampered.members[1].card.payload = B64.encode(try Coders.encoder.encode(cc))
         expectFail("tampered card", [r1, try a.sign(tampered)], "card")
     }
+
+    /// The hub reads `delete_account` and `roster`, and treats a missing field as "no".
+    func testLeavePostWireFormat() throws {
+        let plain = String(decoding: try Coders.encoder.encode(LeavePost()), as: UTF8.self)
+        XCTAssertEqual(plain, "{}")
+        let last = String(decoding: try Coders.encoder.encode(LeavePost(deleteAccount: true)), as: UTF8.self)
+        XCTAssertEqual(last, #"{"delete_account":true}"#)
+    }
 }
