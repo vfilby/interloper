@@ -14,12 +14,12 @@ do not, revoke this device on the <a href="/#devices">overview</a>.</p>
 {{else if .Link}}
 <p>Scan with the iPhone camera (opens the Approver app), or paste the link into the app's Enroll screen.
 The code works once and expires at {{.Expiry.Local.Format "15:04:05"}}.</p>
+<iframe src="/enroll/{{.CodeID}}/status" title="enrollment status"
+  style="width: 100%; height: 8.5rem; border: 1px solid #8884; border-radius: 6px"></iframe>
 {{if .QR}}<p><img src="{{.QR}}" alt="enrollment QR code" width="300" height="300" style="image-rendering: pixelated"></p>{{end}}
 <p><code style="word-break: break-all">{{.Link}}</code></p>
 <p>iOS simulator (it has no camera, and pasting needs the pasteboard synced): run this on the Mac, then click Open.</p>
 <pre class="mono" style="white-space: pre-wrap; word-break: break-all; padding: .6rem; background: #8881">xcrun simctl openurl booted '{{.Link}}'</pre>
-<p class="muted">Waiting for the phone… this page checks every few seconds and shows the device and its fingerprint once it
-has enrolled.</p>
 {{else}}
 <div>This code was issued before the hub restarted, so its link is gone (codes are never written to disk).
 <form class="inline" method="post" action="/enroll"><button>Make a new one</button></form></div>

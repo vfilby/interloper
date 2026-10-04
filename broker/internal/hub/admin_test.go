@@ -70,8 +70,15 @@ func TestEnrollPageShowsFingerprint(t *testing.T) {
 		t.Fatalf("POST /enroll: %d %q", rec.Code, loc)
 	}
 	code, body := get(loc)
-	if code != http.StatusOK || !strings.Contains(body, `http-equiv="refresh"`) || !strings.Contains(body, "wga://enroll?") {
+	if code != http.StatusOK || !strings.Contains(body, "wga://enroll?") || !strings.Contains(body, `src="`+loc+`/status"`) {
 		t.Fatalf("waiting page: %d\n%s", code, body)
+	}
+	if strings.Contains(body, `http-equiv="refresh"`) {
+		t.Fatal("the enroll page itself reloads: the link cannot be copied")
+	}
+	code, status := get(loc + "/status")
+	if code != http.StatusOK || !strings.Contains(status, `http-equiv="refresh"`) || !strings.Contains(status, "Waiting") {
+		t.Fatalf("status box while waiting: %d\n%s", code, status)
 	}
 	m := regexp.MustCompile(`code=([A-Za-z0-9_-]+)`).FindStringSubmatch(body)
 	if m == nil {
@@ -88,8 +95,17 @@ func TestEnrollPageShowsFingerprint(t *testing.T) {
 	if code != http.StatusOK || !strings.Contains(body, protocol.Fingerprint(pub)) || !strings.Contains(body, "test phone") {
 		t.Fatalf("enrolled page lacks the device or its fingerprint: %d\n%s", code, body)
 	}
-	if strings.Contains(body, `http-equiv="refresh"`) || strings.Contains(body, "wga://enroll?") {
-		t.Fatal("enrolled page still refreshes or still shows the spent code")
+	if strings.Contains(body, "wga://enroll?") {
+		t.Fatal("enrolled page still shows the spent code")
+	}
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "http://127.0.0.1:8741"+loc+"/status", nil))
+	status = rec.Body.String()
+	if !strings.Contains(status, protocol.Fingerprint(pub)) || strings.Contains(status, `http-equiv="refresh"`) {
+		t.Fatalf("status box after enrolling: want the fingerprint and no more reloading\n%s", status)
+	}
+	if csp := rec.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "frame-ancestors 'self'") {
+		t.Fatalf("status box CSP %q: must be frameable by this site only", csp)
 	}
 	if code, _ := get("/enroll/unknown"); code != http.StatusNotFound {
 		t.Fatalf("unknown id: %d", code)

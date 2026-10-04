@@ -71,6 +71,7 @@ func (a *Admin) Handler() http.Handler {
 	m.HandleFunc("GET /{$}", a.index)
 	m.HandleFunc("POST /enroll", a.enroll)
 	m.HandleFunc("GET /enroll/{id}", a.enrollPage)
+	m.HandleFunc("GET /enroll/{id}/status", a.enrollStatus)
 	m.HandleFunc("GET /devices/{id}/card.json", a.card)
 	m.HandleFunc("POST /devices/{id}/revoke", a.revoke)
 	m.HandleFunc("POST /adapters", a.addAdapter)
@@ -109,9 +110,16 @@ func sameOriginRequest(r *http.Request) bool {
 	}
 }
 
+// No scripts anywhere. Pages may frame only this site (the enroll page's status box); only that box may be framed,
+// and only by this site.
+const (
+	cspPage  = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; frame-src 'self'; form-action 'self'; frame-ancestors 'none'"
+	cspFrame = "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'self'"
+)
+
 func securityHeaders(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; img-src data:; form-action 'self'; frame-ancestors 'none'")
+		w.Header().Set("Content-Security-Policy", cspPage)
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "same-origin") // not no-referrer: that makes browsers send "Origin: null"
 		w.Header().Set("Cache-Control", "no-store")
@@ -129,7 +137,7 @@ type page struct {
 	Link     string
 	QR       template.URL
 	Expiry   time.Time
-	Refresh  bool // pending: the page reloads itself until the code is used
+	CodeID   string // the enroll page frames /enroll/<id>/status, which reloads itself; the page does not
 	Expired  bool
 	Enrolled *Device // the device that used the code
 	// adapter added
@@ -172,8 +180,9 @@ func (a *Admin) enroll(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/enroll/"+id, http.StatusSeeOther)
 }
 
-// enrollPage shows the code (QR, link, simulator command) and refreshes itself every few seconds until a phone
-// enrolls with it; then it shows that device's name and fingerprint, to compare with the phone.
+// enrollPage shows the code (QR, link, simulator command) and a status box; once a phone has enrolled with it, it
+// shows that device's name and fingerprint, to compare with the phone. The page itself never reloads (the link must
+// stay selectable); the status box does.
 func (a *Admin) enrollPage(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	expires, devID, ok := a.Store.EnrollStatus(id)
@@ -205,8 +214,29 @@ func (a *Admin) enrollPage(w http.ResponseWriter, r *http.Request) {
 			p.QR = template.URL("data:image/png;base64," + base64.StdEncoding.EncodeToString(c.PNG()))
 		}
 	}
-	p.Refresh = true
+	p.CodeID = id
 	a.render(w, "enroll.html", p)
+}
+
+// enrollStatus is the enroll page's status box: it reloads itself every 3 s while the code is unused.
+func (a *Admin) enrollStatus(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	expires, devID, ok := a.Store.EnrollStatus(id)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	p := page{CodeID: id, Expiry: expires}
+	switch {
+	case devID != "":
+		if d, ok := a.Store.Device(devID); ok {
+			p.Enrolled = &d
+		}
+	case time.Now().After(expires):
+		p.Expired = true
+	}
+	w.Header().Set("Content-Security-Policy", cspFrame)
+	a.render(w, "enroll-status.html", p)
 }
 
 func (a *Admin) forget(id string) {
