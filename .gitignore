@@ -4,3 +4,4 @@ broker/hub-data/
 broker/adapter-data/
 hub-data/
 adapter-data/
+deploy/adapter/wga-adapter
