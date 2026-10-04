@@ -40,6 +40,29 @@ final class ApproveFlowUITests: XCTestCase {
         hold.press(forDuration: 2.5)
         XCTAssertTrue(app.staticTexts["approved (confirmed by demo)"].waitForExistence(timeout: 20), "hold did not approve")
         attach(app, "approved-high")
+
+        // Re-enroll from the Device tab with a second code (same hub: what you do after the hub forgot the device),
+        // typing the link as a person would paste it. Then leave the hub.
+        guard let link2 = ProcessInfo.processInfo.environment["WGA_ENROLL_LINK2"], !link2.isEmpty else { return }
+        app.tabBars.buttons["Device"].tap()
+        let another = app.buttons["Enroll with another hub…"]
+        XCTAssertTrue(another.waitForExistence(timeout: 5))
+        another.tap()
+        let field = app.textFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5), "switch-hub sheet did not open")
+        field.tap()
+        field.typeText(link2)
+        attach(app, "switch-hub")
+        app.buttons["Enroll with this hub"].tap()
+        XCTAssertTrue(app.buttons["Done"].waitForExistence(timeout: 20), "re-enrollment summary did not appear")
+        app.buttons["Done"].tap()
+
+        let leave = app.buttons["Leave this hub"]
+        XCTAssertTrue(leave.waitForExistence(timeout: 5))
+        leave.tap()
+        app.buttons["Leave hub"].tap()
+        XCTAssertTrue(app.navigationBars["Enroll"].waitForExistence(timeout: 5), "leaving did not return to Enroll")
+        attach(app, "left-hub")
     }
 
     private func attach(_ app: XCUIApplication, _ name: String) {

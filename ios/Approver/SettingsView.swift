@@ -4,6 +4,7 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject var model: AppModel
     @State private var confirmReset = false
+    @State private var confirmLeave = false
 
     var body: some View {
         List {
@@ -20,7 +21,19 @@ struct SettingsView: View {
                     LabeledContent("Encryption key") { Text(Fingerprint.of(pk.enc)).font(.footnote.monospaced()) }
                 }
                 LabeledContent("Key store", value: model.keys.kind.rawValue)
-                LabeledContent("Hub", value: model.hubURL?.absoluteString ?? "—")
+            }
+
+            Section {
+                LabeledContent("Hub") { Text(model.hubURL?.absoluteString ?? "—").font(.footnote.monospaced()) }
+                Button("Enroll with another hub…") {
+                    model.pendingLink = nil
+                    model.sheet = .switchHub
+                }
+                Button("Leave this hub", role: .destructive) { confirmLeave = true }
+            } header: {
+                Text("Hub")
+            } footer: {
+                Text("Moving or leaving keeps this device's keys: adapters that already trust it keep trusting it. To re-enroll at the same hub (e.g. after its state was reset), get a new code and use Enroll with another hub.")
             }
 
             Section {
@@ -43,10 +56,15 @@ struct SettingsView: View {
             Section {
                 Button("Reset device", role: .destructive) { confirmReset = true }
             } footer: {
-                Text("Deletes this device's keys, hub token and pins. Revoke the device at the hub and at each adapter too.")
+                Text("Deletes this device's keys as well as leaving the hub. Every adapter must then trust the new keys; remove the old device there (`wga-adapter trust remove`) and revoke it at the hub.")
             }
         }
         .navigationTitle("Device")
+        .confirmationDialog("Leave this hub?", isPresented: $confirmLeave, titleVisibility: .visible) {
+            Button("Leave hub", role: .destructive) { model.leaveHub() }
+        } message: {
+            Text("Forgets the hub, its token and pinned adapters. The device keys stay. Revoke the device in the hub's management UI if it should not come back.")
+        }
         .confirmationDialog("Delete this device's keys?", isPresented: $confirmReset, titleVisibility: .visible) {
             Button("Reset device", role: .destructive) { model.reset() }
         }

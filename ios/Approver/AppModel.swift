@@ -57,7 +57,20 @@ final class AppModel: ObservableObject {
     @Published private(set) var decided: [Decided] = []
     @Published var lastError: String?
     @Published var pendingLink: EnrollmentLink?
-    @Published var enrollmentSummary: EnrollmentSummary?
+    /// The one sheet RootView shows: enrolling with another hub, then the summary of an enrollment. One item, so the
+    /// first can turn into the second without two sheets colliding.
+    @Published var sheet: Sheet?
+
+    enum Sheet: Identifiable, Equatable {
+        case switchHub
+        case summary(EnrollmentSummary)
+        var id: String {
+            switch self {
+            case .switchHub: return "switch"
+            case .summary(let s): return "summary-" + s.deviceFingerprint
+            }
+        }
+    }
 
     private let secrets = KeychainStorage()
     private let defaults = UserDefaults.standard
@@ -102,14 +115,17 @@ final class AppModel: ObservableObject {
             guard resp.deviceId == ours else {
                 throw ProtocolError.mismatch("hub enrolled \(resp.deviceId), this device is \(ours)")
             }
+            // Only now, with the new hub's token in hand, forget the old hub. Pins are per hub; keys are kept, so
+            // adapters that already trust this device keep trusting it.
+            if hubURL != link.hub { forgetHub() }
             try secrets.set("hub.token", Data(resp.token.utf8))
             defaults.set(link.hub, forKey: "hubURL")
             hubURL = link.hub
             token = resp.token
             await refreshAdapters()
-            enrollmentSummary = EnrollmentSummary(deviceFingerprint: Fingerprint.of(try keys.publicKeys().approve),
-                                                  adapters: adapters)
             pendingLink = nil
+            sheet = .summary(EnrollmentSummary(deviceFingerprint: Fingerprint.of(try keys.publicKeys().approve),
+                                               adapters: adapters))
         } catch {
             lastError = error.localizedDescription
         }
@@ -159,6 +175,9 @@ final class AppModel: ObservableObject {
 
             applyAcks(try await client.acks(since: ackSince))
             lastError = nil
+        } catch HubClient.HubError.http(401, _) {
+            lastError = "The hub no longer recognizes this device: it was revoked, or the hub's state was reset. "
+                + "Get a new enrollment code, then Device → Enroll with another hub (the same hub works too)."
         } catch {
             lastError = error.localizedDescription
         }
@@ -215,8 +234,21 @@ final class AppModel: ObservableObject {
 
     // MARK: reset
 
+    /// Leaves the hub: token, hub URL, pins and everything seen through it. The device keys stay, so enrolling again
+    /// (here or at another hub) needs no new `trust add` at adapters that already trust this device.
+    func leaveHub() {
+        forgetHub()
+        lastError = nil
+    }
+
+    /// Leaves the hub and deletes the device keys. Every adapter must then be told to trust the new keys.
     func reset() {
         try? keys.reset()
+        forgetHub()
+        lastError = nil
+    }
+
+    private func forgetHub() {
         try? secrets.delete("hub.token")
         defaults.removeObject(forKey: "hubURL")
         defaults.removeObject(forKey: "pinnedAdapters")
@@ -225,6 +257,7 @@ final class AppModel: ObservableObject {
         adapters = []
         conflicts = []
         requests = []
+        seen = [:]
         refused = []
         outcomes = [:]
         decided = []

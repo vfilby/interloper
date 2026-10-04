@@ -3,6 +3,8 @@
 The code works once and expires at {{.Expiry.Local.Format "15:04:05"}}.</p>
 {{if .QR}}<p><img src="{{.QR}}" alt="enrollment QR code" width="300" height="300" style="image-rendering: pixelated"></p>{{end}}
 <p><code style="word-break: break-all">{{.Link}}</code></p>
+<p>iOS simulator (it has no camera, and pasting needs the pasteboard synced): run this on the Mac, then click Open.</p>
+<pre class="mono" style="white-space: pre-wrap; word-break: break-all; padding: .6rem; background: #8881">xcrun simctl openurl booted '{{.Link}}'</pre>
 <p class="muted">After enrolling, the phone shows its approve-key fingerprint. Add the device's card to each adapter that should
 send it requests, and compare the fingerprint there.</p>
 <p><a href="/">Back to overview</a></p>
