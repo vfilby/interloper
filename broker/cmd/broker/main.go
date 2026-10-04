@@ -2,7 +2,7 @@
 //
 // Configuration is environment only; secrets are files (mounted read-only), never environment values:
 //
-//	WARPGATE_URL          https://bastion.home.example
+//	WARPGATE_URL          https://<bastion host>    required
 //	WARPGATE_TOKEN_FILE   /run/secrets/warpgate-token    the approver user's API token (bastion-apply --mint-token approver)
 //	PUSHOVER_TOKEN_FILE   /run/secrets/pushover-token    Pushover application token
 //	PUSHOVER_USER_FILE    /run/secrets/pushover-user     Pushover user key
@@ -54,7 +54,10 @@ func main() {
 
 func run(log *slog.Logger, once, check bool) error {
 	c := &env{}
-	base := c.str("WARPGATE_URL", "https://bastion.home.example")
+	base := c.str("WARPGATE_URL", "")
+	if base == "" {
+		c.fail("WARPGATE_URL is required (the Warpgate base URL, e.g. https://bastion.example)")
+	}
 	wgToken := c.secret("WARPGATE_TOKEN_FILE", "/run/secrets/warpgate-token")
 	poToken := c.secret("PUSHOVER_TOKEN_FILE", "/run/secrets/pushover-token")
 	poUser := c.secret("PUSHOVER_USER_FILE", "/run/secrets/pushover-user")
