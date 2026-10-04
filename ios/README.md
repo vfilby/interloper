@@ -30,9 +30,11 @@ Or open `Approver.xcodeproj` in Xcode and run. A device build needs a signing te
 ## Run against a local hub (simulator)
 
 1. Start the hub with its device API on `http://127.0.0.1:8740` (the simulator shares the Mac's loopback).
-2. In the management UI, create an enrollment code. Open the link in the simulator:
-   `xcrun simctl openurl booted 'wga://enroll?hub=http%3A%2F%2F127.0.0.1%3A8740&code=<code>'`,
-   or paste it into the Enroll screen.
+2. In the management UI, create an enrollment code. The enroll page shows a ready-made command for the simulator,
+   which has no camera:
+   `xcrun simctl openurl booted 'wga://enroll?hub=http%3A%2F%2F127.0.0.1%3A8740&code=<code>'`. Click Open.
+   Pasting into the Enroll screen also works if Simulator's Edit → Automatically Sync Pasteboard is on; use the
+   Paste button.
 3. Enroll. The summary shows the device fingerprint and the adapters it pinned. Compare them with the management UI
    and with what each adapter prints.
 4. Tell each adapter to trust the device (`adapter trust add`), then requests show up in the inbox. The app polls
@@ -61,6 +63,17 @@ Adapter pins are public keys, kept in UserDefaults.
 
 The script checks the demo service's outcome afterwards. `scripts/e2e-cli.sh` is the same flow with the Go software
 device instead of the app.
+
+## Hubs: switching, leaving, resetting (Device tab)
+
+| Action | What it does | Adapters |
+|---|---|---|
+| **Enroll with another hub…** (or open a `wga://enroll` link while enrolled) | Enrolls with the new hub first, and forgets the old one only once that succeeds. Works for the same hub too, e.g. after its state was reset. | Keys are kept, so nothing to re-trust |
+| **Leave this hub** | Forgets the hub, its token, pins and requests. Keys are kept. | Still trusted; revoke the device at the hub if it should not come back |
+| **Reset device** | Leave the hub, and delete the keys | Every adapter must `trust add` the new card; `trust remove` the old one |
+
+A hub that no longer knows the device (revoked, or its state wiped) answers 401. The app then says so and points to
+Enroll with another hub. A new code from the same hub re-enrolls the same keys.
 
 ## What the app enforces
 

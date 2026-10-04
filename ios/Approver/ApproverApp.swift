@@ -12,6 +12,8 @@ struct ApproverApp: App {
                 .onOpenURL { url in
                     if let link = EnrollmentLink(url.absoluteString) {
                         model.pendingLink = link
+                        // Already enrolled: offer to move to that hub (or re-enroll at this one) instead of ignoring it.
+                        if model.isEnrolled { model.sheet = .switchHub }
                     } else {
                         model.lastError = "Not an enrollment link: \(url.absoluteString)"
                     }
@@ -57,15 +59,18 @@ struct RootView: View {
                 NavigationStack { EnrollView() }
             }
         }
-        .sheet(item: Binding(get: { model.enrollmentSummary.map(SummaryBox.init) }, set: { if $0 == nil { model.enrollmentSummary = nil } })) { box in
-            EnrollmentSummaryView(summary: box.summary)
+        .sheet(item: $model.sheet, onDismiss: {
+            // Cancelled a hub switch: drop the link it came with. (A finished one has already cleared it.)
+            if model.sheet == nil { model.pendingLink = nil }
+        }) { sheet in
+            switch sheet {
+            case .switchHub:
+                NavigationStack { EnrollView(switching: true) }.environmentObject(model)
+            case .summary(let s):
+                EnrollmentSummaryView(summary: s).environmentObject(model)
+            }
         }
     }
-}
-
-private struct SummaryBox: Identifiable {
-    let summary: AppModel.EnrollmentSummary
-    var id: String { summary.deviceFingerprint }
 }
 
 /// Shown on top of every screen when the keys are software keys (the simulator).

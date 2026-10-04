@@ -263,10 +263,9 @@ func (st *Store) Enroll(code string, card protocol.Envelope, now time.Time) (pro
 		return c, "", errors.New("enrollment code unknown, used or expired")
 	}
 	st.s.Codes = append(st.s.Codes[:idx], st.s.Codes[idx+1:]...)
-	if d, ok := st.s.Devices[c.DeviceID]; ok && !d.Revoked {
-		_ = st.commit() // the code is spent either way
-		return c, "", ErrConflict
-	}
+	// A device already known here (the phone left this hub and came back, or was revoked) is enrolled again: the admin
+	// issued a fresh code and the card is signed by the same key. The new token replaces the old one, which stops
+	// working. Adapters are unaffected: they trust the key, not the hub's record.
 	tok, h := NewSecret()
 	st.s.Devices[c.DeviceID] = &Device{ID: c.DeviceID, Name: c.Name, Card: card, TokenHash: h, EnrolledAt: now}
 	return c, tok, st.commit()
