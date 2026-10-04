@@ -59,17 +59,25 @@ public final class SecureEnclaveKeyStore: KeyStore, @unchecked Sendable {
 
     private static func slot(_ name: String) -> String { "se.\(name)" }
 
+    // Approve: Face ID (current enrollment) or the app PIN, never just the device passcode. iOS cannot express that on
+    // one key: with .applicationPassword in its access control, a Secure Enclave key asks for the password even after
+    // Face ID succeeds, `.or` or not. So the key needs only the app PIN, and a copy of the PIN is kept in a keychain
+    // item that only Face ID (current enrollment) opens: Face ID reads the PIN and the PIN opens the key, one prompt.
+    // If Face ID fails or is cancelled, iOS asks for the PIN itself. The cost: the PIN passes through app memory.
+    // Keys made before this (Face ID and PIN in one access control) still need both; the stored PIN supplies the
+    // second, once the person has approved with the PIN typed in the app.
+
     public func generate(pin: String?) throws {
+        guard let pin, !pin.isEmpty else { throw ProtocolError.malformed("the Secure Enclave approve key needs an app PIN") }
         var err: Unmanaged<CFError>?
-        // Approve: Face ID (current enrollment) or the app PIN, never just the device passcode.
         guard let approveAC = SecAccessControlCreateWithFlags(nil, kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly,
-                                                              [.privateKeyUsage, .biometryCurrentSet, .or, .applicationPassword], &err),
+                                                              [.privateKeyUsage, .applicationPassword], &err),
               let denyAC = SecAccessControlCreateWithFlags(nil, kSecAttrAccessibleWhenUnlockedThisDeviceOnly, [.privateKeyUsage], &err),
               let encAC = SecAccessControlCreateWithFlags(nil, kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly, [.privateKeyUsage], &err)
         else { throw err!.takeRetainedValue() as Error }
 
         let ctx = LAContext()
-        if let pin, !pin.isEmpty { ctx.setCredential(Data(pin.utf8), type: .applicationPassword) }
+        ctx.setCredential(Data(pin.utf8), type: .applicationPassword)
         let approve = try SecureEnclave.P256.Signing.PrivateKey(accessControl: approveAC, authenticationContext: ctx)
         let deny = try SecureEnclave.P256.Signing.PrivateKey(accessControl: denyAC)
         let enc = try SecureEnclave.P256.KeyAgreement.PrivateKey(accessControl: encAC)
@@ -77,13 +85,47 @@ public final class SecureEnclaveKeyStore: KeyStore, @unchecked Sendable {
         try storage.set(Self.slot("approve"), approve.dataRepresentation)
         try storage.set(Self.slot("deny"), deny.dataRepresentation)
         try storage.set(Self.slot("enc"), enc.dataRepresentation)
+        try savePIN(pin)
     }
 
+    /// A typed PIN goes straight to the key. Otherwise Face ID opens the stored PIN (same context, so the key does not
+    /// ask again); without it, iOS asks for the PIN.
     private func approveKey(pin: String?) throws -> SecureEnclave.P256.Signing.PrivateKey {
         let ctx = LAContext()
         ctx.localizedReason = "Approve the request"
-        if let pin, !pin.isEmpty { ctx.setCredential(Data(pin.utf8), type: .applicationPassword) }
+        if let pin = (pin?.isEmpty == false ? pin : nil) ?? storedPIN(ctx) {
+            ctx.setCredential(Data(pin.utf8), type: .applicationPassword)
+        }
         return try SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: try need("approve"), authenticationContext: ctx)
+    }
+
+    private static let pinItem: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                                 kSecAttrService as String: "com.eff3.interloper.pin",
+                                                 kSecAttrAccount as String: "approve"]
+
+    /// Keeps the app PIN where only Face ID (current enrollment) can read it.
+    private func savePIN(_ pin: String) throws {
+        var err: Unmanaged<CFError>?
+        guard let ac = SecAccessControlCreateWithFlags(nil, kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly,
+                                                       .biometryCurrentSet, &err)
+        else { throw err!.takeRetainedValue() as Error }
+        SecItemDelete(Self.pinItem as CFDictionary)
+        var q = Self.pinItem
+        q[kSecValueData as String] = Data(pin.utf8)
+        q[kSecAttrAccessControl as String] = ac
+        let st = SecItemAdd(q as CFDictionary, nil)
+        guard st == errSecSuccess else { throw KeychainError(status: st) }
+    }
+
+    /// The stored PIN, after Face ID on ctx; nil if there is none or Face ID failed or was cancelled.
+    private func storedPIN(_ ctx: LAContext) -> String? {
+        var q = Self.pinItem
+        q[kSecReturnData as String] = true
+        q[kSecMatchLimit as String] = kSecMatchLimitOne
+        q[kSecUseAuthenticationContext as String] = ctx
+        var out: CFTypeRef?
+        guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess, let d = out as? Data else { return nil }
+        return String(decoding: d, as: UTF8.self)
     }
 
     private func need(_ name: String) throws -> Data {
@@ -100,7 +142,11 @@ public final class SecureEnclaveKeyStore: KeyStore, @unchecked Sendable {
     }
 
     public func signApprove(_ data: Data, pin: String?) throws -> Data {
-        try approveKey(pin: pin).signature(for: data).rawRepresentation
+        let sig = try approveKey(pin: pin).signature(for: data).rawRepresentation
+        // A typed PIN that worked is kept for Face ID: keys made before the stored PIN, or after Face ID re-enrollment
+        // (which makes the stored copy unreadable).
+        if let pin, !pin.isEmpty { try? savePIN(pin) }
+        return sig
     }
 
     public func signDeny(_ data: Data) throws -> Data {
@@ -115,6 +161,7 @@ public final class SecureEnclaveKeyStore: KeyStore, @unchecked Sendable {
 
     public func reset() throws {
         for n in ["approve", "deny", "enc"] { try storage.delete(Self.slot(n)) }
+        SecItemDelete(Self.pinItem as CFDictionary)
     }
 }
 
