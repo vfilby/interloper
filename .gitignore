@@ -1,2 +1,6 @@
 .claude/
 deploy/broker
+broker/hub-data/
+broker/adapter-data/
+hub-data/
+adapter-data/
