@@ -36,6 +36,7 @@ import (
 	"syscall"
 	"time"
 
+	"warpgate-approver/broker/internal/apns"
 	"warpgate-approver/broker/internal/audit"
 	"warpgate-approver/broker/internal/hub"
 )
@@ -43,6 +44,7 @@ import (
 type config struct {
 	apiAddr, adminAddr, hubURL, stateDir                        string
 	issuer, clientID, secretFile, redirect, adminGroup, keyFile string
+	apnsKeyFile, apnsKeyID, apnsTeamID, apnsTopic               string
 }
 
 func main() {
@@ -57,6 +59,10 @@ func main() {
 	flag.StringVar(&c.redirect, "oidc-redirect", "", "OIDC redirect URL: https://<management UI host>/oidc/callback")
 	flag.StringVar(&c.adminGroup, "oidc-admin-group", "interloper_admins", "group whose members are admins")
 	flag.StringVar(&c.keyFile, "session-key-file", "", "session signing key file (default <state>/session.key)")
+	flag.StringVar(&c.apnsKeyFile, "apns-key-file", "", "APNs auth key (.p8); empty: no push notifications")
+	flag.StringVar(&c.apnsKeyID, "apns-key-id", "", "the APNs key's Key ID")
+	flag.StringVar(&c.apnsTeamID, "apns-team-id", "ABCDE12345", "Apple developer team id")
+	flag.StringVar(&c.apnsTopic, "apns-topic", "com.eff3.interloper", "the app's bundle id")
 	flag.Parse()
 
 	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
@@ -85,7 +91,18 @@ func run(log *slog.Logger, c config) error {
 	}
 	defer a.Close()
 
-	api := &http.Server{Addr: c.apiAddr, Handler: (&hub.API{Store: st, Audit: a, Log: log}).Handler(),
+	var push hub.Pusher
+	if c.apnsKeyFile != "" {
+		key, err := apns.LoadKey(c.apnsKeyFile)
+		if err != nil {
+			return err
+		}
+		if c.apnsKeyID == "" {
+			return errors.New("-apns-key-id is required with -apns-key-file")
+		}
+		push = &apns.Client{KeyID: c.apnsKeyID, TeamID: c.apnsTeamID, Topic: c.apnsTopic, Key: key}
+	}
+	api := &http.Server{Addr: c.apiAddr, Handler: (&hub.API{Store: st, Audit: a, Log: log, Push: push}).Handler(),
 		ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}
 	admin := &http.Server{Addr: c.adminAddr, ReadHeaderTimeout: 10 * time.Second,
 		Handler: (&hub.Admin{Store: st, Audit: a, AuditPath: auditPath, HubURL: c.hubURL, Log: log, Auth: auth}).Handler()}
@@ -104,7 +121,8 @@ func run(log *slog.Logger, c config) error {
 	if auth.Local {
 		mode = "local (no sign-in)"
 	}
-	log.Info("started", "api", c.apiAddr, "admin", c.adminAddr, "url", c.hubURL, "state", c.stateDir, "sign-in", mode)
+	log.Info("started", "api", c.apiAddr, "admin", c.adminAddr, "url", c.hubURL, "state", c.stateDir, "sign-in", mode,
+		"push", push != nil)
 	select {
 	case <-ctx.Done():
 	case err := <-errc:
