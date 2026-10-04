@@ -75,29 +75,40 @@ func (a *Admin) Handler() http.Handler {
 }
 
 // sameOrigin refuses cross-site form posts (CSRF): the proxy in front authenticates by cookie.
+//
+// Sec-Fetch-Site decides when present: every current browser sends it and a page cannot forge it. Origin is only the
+// fallback for browsers without it. Origin is not compared first because it can be "null" for a genuine same-origin
+// post (privacy settings, referrer policies), and behind a proxy the Host header may not be the name in the address bar.
 func sameOrigin(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet && r.Method != http.MethodHead {
-			if s := r.Header.Get("Sec-Fetch-Site"); s != "" && s != "same-origin" && s != "none" {
-				http.Error(w, "cross-site request refused", http.StatusForbidden)
-				return
-			}
-			if o := r.Header.Get("Origin"); o != "" {
-				if u, err := url.Parse(o); err != nil || u.Host != r.Host {
-					http.Error(w, "cross-origin request refused", http.StatusForbidden)
-					return
-				}
-			}
+		if r.Method != http.MethodGet && r.Method != http.MethodHead && !sameOriginRequest(r) {
+			http.Error(w, "cross-site request refused", http.StatusForbidden)
+			return
 		}
 		h.ServeHTTP(w, r)
 	})
+}
+
+func sameOriginRequest(r *http.Request) bool {
+	if s := r.Header.Get("Sec-Fetch-Site"); s != "" {
+		return s == "same-origin" || s == "none"
+	}
+	switch o := r.Header.Get("Origin"); o {
+	case "":
+		return true // not a browser (curl, scripts): CSRF needs a browser carrying the person's cookie
+	case "null":
+		return false // a browser hiding its origin, without Sec-Fetch-Site to vouch for it
+	default:
+		u, err := url.Parse(o)
+		return err == nil && u.Host == r.Host
+	}
 }
 
 func securityHeaders(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; img-src data:; form-action 'self'; frame-ancestors 'none'")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("Referrer-Policy", "same-origin") // not no-referrer: that makes browsers send "Origin: null"
 		w.Header().Set("Cache-Control", "no-store")
 		h.ServeHTTP(w, r)
 	})
