@@ -4,11 +4,13 @@ import SwiftUI
 @main
 struct ApproverApp: App {
     @StateObject private var model = AppModel()
+    @UIApplicationDelegateAdaptor(PushDelegate.self) private var push
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environmentObject(model)
+                .onAppear { push.model = model }
                 .onOpenURL { url in
                     do {
                         model.pendingLink = try EnrollmentLink(parsing: url.absoluteString)
@@ -51,6 +53,7 @@ struct RootView: View {
                     NavigationStack { SettingsView() }
                         .tabItem { Label("Device", systemImage: "key") }
                 }
+                .task { await model.enablePush() }
                 .task(id: scenePhase) {
                     // Poll while in the foreground, on every screen (a .task on the inbox would stop when a request
                     // is opened, and its ack would never arrive).

@@ -27,6 +27,9 @@ targets:
         # Overridden by the release pipeline (docs/runbooks/testflight.md).
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
+        # Push: Debug builds get APNs' development environment, Release (TestFlight) production. The App ID needs the
+        # Push Notifications capability and the profiles must be made after it (docs/runbooks/testflight.md).
+        CODE_SIGN_ENTITLEMENTS: Approver/Approver.entitlements
       configs:
         # As MigraLog: the App Store Connect API key cannot do cloud signing, so Release signs manually with the
         # team's Apple Distribution certificate and an App Store profile for this bundle id.
@@ -34,6 +37,7 @@ targets:
           CODE_SIGN_STYLE: Manual
           CODE_SIGN_IDENTITY: "Apple Distribution"
           PROVISIONING_PROFILE_SPECIFIER: "Interloper App Store"
+          CODE_SIGN_ENTITLEMENTS: Approver/Approver-Release.entitlements
     info:
       path: Approver/Info.plist
       properties:

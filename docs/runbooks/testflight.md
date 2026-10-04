@@ -65,6 +65,21 @@ gh secret set ASC_API_KEY_P8 -R vfilby/interloper < "AuthKey_<KEYID>.p8"
 - **Read a failed signing step's log:** `CERT_P12:` shown blank means the secret is empty (a wrong path in the
   `base64` line); "passphrase … not correct" means the password secret does not match the `.p12`.
 
+### 5. Push notifications (APNs)
+The app asks for permission once it is enrolled and sends its APNs token to the hub. The hub sends a fixed text,
+never request content.
+1. **Identifiers → `com.eff3.interloper` → Capabilities:** tick **Push Notifications**, then Save. (No certificate:
+   the hub uses a key, below.)
+2. **Profiles → Interloper App Store → Edit → Save**, download it, and update the secret:
+   `base64 -i "Interloper_App_Store.mobileprovision" | gh secret set INTERLOPER_PROVISIONING_PROFILE -R vfilby/interloper`.
+   An old profile without push makes the archive step fail ("doesn't include the aps-environment entitlement").
+3. **Keys → +:** name `Interloper APNs`, tick **Apple Push Notifications service (APNs)**, environment **Sandbox &
+   Production**, then download `AuthKey_<KEYID>.p8`. It downloads **once**; keep it with the signing material in
+   1Password. It goes to the hub, not to GitHub: `wga-hub -apns-key-file … -apns-key-id <KEYID>`.
+
+Debug builds from Xcode use APNs' development environment and TestFlight builds production; the app tells the hub
+which, so one key serves both.
+
 ## Releasing a beta
 
 - **Starting a run:** Actions → **[iOS] TestFlight** → Run workflow. A push to `main` that touches `ios/` also starts

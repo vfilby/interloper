@@ -37,6 +37,7 @@ struct SettingsView: View {
 
             Section {
                 LabeledContent("Hub") { Text(model.hubURL?.absoluteString ?? "—").font(.footnote.monospaced()) }
+                if let e = model.pushError { Text(e).font(.footnote).foregroundStyle(.red) }
                 Button("Connect to another server…") {
                     model.pendingLink = nil
                     model.sheet = .switchHub
