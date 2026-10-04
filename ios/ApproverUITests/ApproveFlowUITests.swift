@@ -80,7 +80,7 @@ final class ApproveFlowUITests: XCTestCase {
         let another = app.buttons["Connect to another server…"]
         scrollTo(another, in: app) // below the Account section; SwiftUI lists load rows lazily
         another.tap()
-        let useLink = app.buttons["I have an enrollment link or QR code"]
+        let useLink = app.buttons["I have an enrollment link"]
         XCTAssertTrue(useLink.waitForExistence(timeout: 5), "connect sheet did not open on the server step")
         useLink.tap()
         let field = app.textFields["wga://enroll?hub=…&code=…"]

@@ -21,6 +21,7 @@ struct EnrollView: View {
     @State private var localUser = ""
     @State private var usingLink = false
     @State private var linkText = ""
+    @State private var scanning = false
     @State private var name = UIDevice.current.name
     @State private var pin = ""
     @State private var busy = false
@@ -95,9 +96,12 @@ struct EnrollView: View {
                 Text("The address of your Interloper server: the page you manage it from.")
             }
             Section {
-                Button("I have an enrollment link or QR code") { usingLink = true; stepError = nil }
+                if QRScannerSheet.isAvailable {
+                    Button("Scan an enrollment QR code") { usingLink = true; stepError = nil; scanning = true }
+                }
+                Button("I have an enrollment link") { usingLink = true; stepError = nil }
             } footer: {
-                Text("From the server's management page. Scanning its QR code with the Camera app opens this app with it.")
+                Text("From the server's management page.")
             }
         }
     }
@@ -175,6 +179,9 @@ struct EnrollView: View {
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .font(.footnote.monospaced())
+            if QRScannerSheet.isAvailable {
+                Button("Scan QR code", systemImage: "qrcode.viewfinder") { scanning = true }
+            }
             PasteButton(payloadType: String.self) { strings in
                 if let s = strings.first { linkText = s.trimmingCharacters(in: .whitespacesAndNewlines) }
             }
@@ -185,7 +192,10 @@ struct EnrollView: View {
         } header: {
             Text("Enrollment link")
         } footer: {
-            Text("Paste the link shown under the QR code. Simulator: run the `xcrun simctl openurl` command shown on the enroll page.")
+            Text("Scan the QR code on the server's management page, or paste the link shown under it. Simulator: run the `xcrun simctl openurl` command shown on the enroll page.")
+        }
+        .sheet(isPresented: $scanning) {
+            QRScannerSheet { linkText = $0 }
         }
     }
 

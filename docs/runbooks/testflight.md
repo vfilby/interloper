@@ -10,15 +10,17 @@ and uploaded by GitHub Actions: `.github/workflows/ios-testflight.yml`, modelled
 ## One-time setup
 
 ### 1. GitHub repository
-Create a **private** repo for this code. Register Claude's deploy key on it with write access:
-`~/.ssh/id_claude_git.pub`. Claude pushes with `cgit`.
+The repo is `vfilby/interloper` (**public**: no internal hostnames, IPs or keys in it). Claude pushes with `cgit`,
+using its per-repo deploy key.
 
 ### 2. Apple Developer (developer.apple.com → Certificates, Identifiers & Profiles)
 1. **Identifiers → +, App IDs → App:** description `Interloper`, bundle id (explicit) `com.eff3.interloper`. No extra
    capabilities are needed yet. Push notifications will need one later.
 2. **Profiles → +, Distribution → App Store Connect:**
    - App ID: `com.eff3.interloper`;
-   - certificate: the team's existing **Apple Distribution** certificate (the one MigraLog uses);
+   - certificate: the team's existing **Apple Distribution** certificate (the one MigraLog uses). Not "iOS
+     Distribution" (the older type) and not "Developer ID Application" (Mac apps outside the App Store): the build
+     signs as `Apple Distribution`. If there are several, match the expiry date of the one in your keychain;
    - profile name: exactly `Interloper App Store`.
 
    Download it.
@@ -30,8 +32,12 @@ Create a **private** repo for this code. Register Claude's deploy key on it with
    members who should approve, once they are App Store Connect users).
 
 ### 4. Repository secrets (Settings → Secrets and variables → Actions)
-The certificate and API key are the same as MigraLog's. GitHub cannot read secrets back, so take them from where
-they are kept (1Password).
+GitHub cannot read secrets back, so they cannot be copied from MigraLog's repo. Instead:
+- **Certificate:** Keychain Access → login → My Certificates → right-click
+  `Apple Distribution: <name> (ABCDE12345)` → Export as `.p12`, with a new password.
+- **API key:** App Store Connect → Users and Access → Integrations → App Store Connect API → Team Keys → generate
+  an **App Manager** key (e.g. `Interloper CI`). The `.p8` downloads **once**; the Issuer ID is at the top of the page.
+- Keep the `.p12`, its password, the `.p8`, Key ID and Issuer ID together in 1Password.
 
 | Secret | Value |
 |---|---|
@@ -42,7 +48,22 @@ they are kept (1Password).
 | `ASC_API_KEY_P8` | the key's `.p8` text |
 | `APPLE_TEAM_ID` | `ABCDE12345` |
 
-With the GitHub CLI: `gh secret set INTERLOPER_PROVISIONING_PROFILE --repo <owner>/<repo> < profile.b64`, and so on.
+With the GitHub CLI (quote filenames: exported ones contain spaces and parentheses):
+```
+gh secret set APPLE_TEAM_ID -R vfilby/interloper -b ABCDE12345
+base64 -i "Interloper_App_Store.mobileprovision" | gh secret set INTERLOPER_PROVISIONING_PROFILE -R vfilby/interloper
+base64 -i "<exported>.p12" | gh secret set SWIFT_CERTIFICATE_P12 -R vfilby/interloper
+pbpaste | gh secret set SWIFT_CERTIFICATE_PASSWORD -R vfilby/interloper   # copy the password first
+pbpaste | gh secret set ASC_ISSUER_ID -R vfilby/interloper                # copy the Issuer ID first
+gh secret set ASC_KEY_ID -R vfilby/interloper -b <KEYID>
+gh secret set ASC_API_KEY_P8 -R vfilby/interloper < "AuthKey_<KEYID>.p8"
+```
+- **Use `pbpaste |`, not a bare `gh secret set NAME`:** in some shells `gh` does not prompt and silently reads stdin,
+  which is easy to get wrong.
+- **Check the password matches the file before setting it:**
+  `openssl pkcs12 -legacy -in "<exported>.p12" -nokeys -passin "pass:$(pbpaste)" >/dev/null && echo OK`.
+- **Read a failed signing step's log:** `CERT_P12:` shown blank means the secret is empty (a wrong path in the
+  `base64` line); "passphrase … not correct" means the password secret does not match the `.p12`.
 
 ## Releasing a beta
 
@@ -52,17 +73,17 @@ With the GitHub CLI: `gh secret set INTERLOPER_PROVISIONING_PROFILE --repo <owne
 - **After upload:** App Store Connect processes the build (about 5–15 minutes). The `Beta` group then gets it, and
   testers install it from the TestFlight app. Builds expire after 90 days.
 
-### Export compliance (asked on the first upload)
-The app does not declare `ITSAppUsesNonExemptEncryption`, so App Store Connect asks. The facts:
-- it encrypts message payloads and signs decisions with standard, published algorithms (HPKE: P-256 ECDH, HKDF,
-  AES-GCM; ECDSA P-256; Ed25519 verification), all through Apple's CryptoKit;
-- it uses nothing proprietary, and is not limited to authentication.
+### Export compliance
+`ITSAppUsesNonExemptEncryption` is `false` in `project.yml`, so App Store Connect does not ask. The reasoning, for
+when it changes:
+- The app encrypts and signs with standard algorithms (HPKE: P-256 ECDH, HKDF, AES-GCM; ECDSA P-256; Ed25519), but
+  only through Apple's CryptoKit and Security frameworks. It has no third-party or own crypto.
+- If App Store Connect asks "What type of encryption algorithms does your app implement?", the answer is **None of
+  the algorithms mentioned above**. "Standard encryption algorithms" means *instead of, or in addition to,* Apple's
+  operating-system encryption, i.e. shipping your own implementation; that path asks for documentation.
+- If the app ever bundles its own crypto (e.g. a third-party library), remove the flag and answer again.
 
-Under US export rules that is ordinary mass-market encryption: usually eligible for the mass-market exception, with no
-licence needed for distribution outside embargoed countries. It is not "exempt" in Apple's narrow sense
-(authentication only, or only the OS's own HTTPS), so answer that it uses encryption and is not exempt, choose the
-standard-algorithms/mass-market path, and answer the rest as asked. This is not legal advice. Once you have settled
-the answer, it can be put in `Info.plist` so App Store Connect stops asking.
+This is not legal advice.
 
 ## Using a TestFlight build
 
