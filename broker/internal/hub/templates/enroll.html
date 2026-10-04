@@ -1,11 +1,28 @@
 {{define "enroll.html"}}{{template "head" .}}
+{{if .Enrolled}}{{with .Enrolled}}
+<p><strong>{{.Name}}</strong> enrolled. Its fingerprint:</p>
+<p class="mono" style="font-size: 2rem; font-weight: 700; letter-spacing: .05em">{{cardfp .Card}}</p>
+<p>The phone shows the same fingerprint (on the Enrolled screen, and on its Device tab). <strong>They must match</strong>; if they
+do not, revoke this device on the <a href="/#devices">overview</a>.</p>
+<h2>Next: let adapters send it requests</h2>
+<p>Download the <a href="/devices/{{.ID}}/card.json">card.json</a>, then on each adapter's host:</p>
+<pre class="mono" style="white-space: pre-wrap; padding: .6rem; background: #8881">wga-adapter trust add -dir &lt;adapter dir&gt; device-{{.ID}}.json</pre>
+<p class="muted">It prints the fingerprint again: compare it once more. Until then this device receives nothing.</p>
+{{end}}
+{{else if .Expired}}
+<div>This code expired unused. <form class="inline" method="post" action="/enroll"><button>Make a new one</button></form></div>
+{{else if .Link}}
 <p>Scan with the iPhone camera (opens the Approver app), or paste the link into the app's Enroll screen.
 The code works once and expires at {{.Expiry.Local.Format "15:04:05"}}.</p>
 {{if .QR}}<p><img src="{{.QR}}" alt="enrollment QR code" width="300" height="300" style="image-rendering: pixelated"></p>{{end}}
 <p><code style="word-break: break-all">{{.Link}}</code></p>
 <p>iOS simulator (it has no camera, and pasting needs the pasteboard synced): run this on the Mac, then click Open.</p>
 <pre class="mono" style="white-space: pre-wrap; word-break: break-all; padding: .6rem; background: #8881">xcrun simctl openurl booted '{{.Link}}'</pre>
-<p class="muted">After enrolling, the phone shows its approve-key fingerprint. Add the device's card to each adapter that should
-send it requests, and compare the fingerprint there.</p>
+<p class="muted">Waiting for the phone… this page checks every few seconds and shows the device and its fingerprint once it
+has enrolled.</p>
+{{else}}
+<div>This code was issued before the hub restarted, so its link is gone (codes are never written to disk).
+<form class="inline" method="post" action="/enroll"><button>Make a new one</button></form></div>
+{{end}}
 <p><a href="/">Back to overview</a></p>
 {{template "foot" .}}{{end}}

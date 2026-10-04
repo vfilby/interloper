@@ -76,7 +76,11 @@ type QueuedDecision struct {
 type enrollCode struct {
 	Hash    string    `json:"hash"`
 	Expires time.Time `json:"expires"`
+	Device  string    `json:"device,omitempty"` // set once spent: who enrolled with it (for the enroll page)
 }
+
+// codeID names a code in URLs without revealing it: a prefix of the hash the hub keeps anyway.
+func codeID(hash string) string { return hash[:16] }
 
 type state struct {
 	Adapters  map[string]*Adapter `json:"adapters"`
@@ -227,22 +231,40 @@ func (st *Store) Adapters() []Adapter {
 
 // ---- devices ----
 
-// NewEnrollCode returns a one-time enrollment code.
-func (st *Store) NewEnrollCode(now time.Time) (string, error) {
+// NewEnrollCode returns a one-time enrollment code and an id for following it (EnrollStatus).
+func (st *Store) NewEnrollCode(now time.Time) (code, id string, err error) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	code, h := NewSecret()
-	live := st.s.Codes[:0]
+	keep := st.s.Codes[:0]
+	open := 0
 	for _, c := range st.s.Codes {
-		if now.Before(c.Expires) {
-			live = append(live, c)
+		// Spent codes are kept a while after expiry so the enroll page can still say who used them.
+		if now.Before(c.Expires.Add(time.Hour)) {
+			keep = append(keep, c)
+			if c.Device == "" && now.Before(c.Expires) {
+				open++
+			}
 		}
 	}
-	if len(live) >= 10 {
-		return "", errors.New("too many open enrollment codes; wait for them to expire")
+	st.s.Codes = keep
+	if open >= 10 {
+		return "", "", errors.New("too many open enrollment codes; wait for them to expire")
 	}
-	st.s.Codes = append(live, enrollCode{Hash: h, Expires: now.Add(EnrollCodeTTL)})
-	return code, st.commit()
+	st.s.Codes = append(st.s.Codes, enrollCode{Hash: h, Expires: now.Add(EnrollCodeTTL)})
+	return code, codeID(h), st.commit()
+}
+
+// EnrollStatus reports on a code by id: when it expires, and the device that used it ("" while unused).
+func (st *Store) EnrollStatus(id string) (expires time.Time, device string, ok bool) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	for _, c := range st.s.Codes {
+		if codeID(c.Hash) == id {
+			return c.Expires, c.Device, true
+		}
+	}
+	return time.Time{}, "", false
 }
 
 // Enroll spends a code and registers the device card. Returns the device's hub token.
@@ -255,14 +277,14 @@ func (st *Store) Enroll(code string, card protocol.Envelope, now time.Time) (pro
 	defer st.mu.Unlock()
 	idx := -1
 	for i, ec := range st.s.Codes {
-		if now.Before(ec.Expires) && sameHash(code, ec.Hash) {
+		if ec.Device == "" && now.Before(ec.Expires) && sameHash(code, ec.Hash) {
 			idx = i
 		}
 	}
 	if idx < 0 {
 		return c, "", errors.New("enrollment code unknown, used or expired")
 	}
-	st.s.Codes = append(st.s.Codes[:idx], st.s.Codes[idx+1:]...)
+	st.s.Codes[idx].Device = c.DeviceID // spent
 	// A device already known here (the phone left this hub and came back, or was revoked) is enrolled again: the admin
 	// issued a fresh code and the card is signed by the same key. The new token replaces the old one, which stops
 	// working. Adapters are unaffected: they trust the key, not the hub's record.

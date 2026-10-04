@@ -16,7 +16,8 @@ struct SettingsView: View {
             Section("Device") {
                 if let pk = try? model.keys.publicKeys() {
                     LabeledContent("Device id") { Text(pk.deviceID).font(.footnote.monospaced()) }
-                    LabeledContent("Approve key") { Text(Fingerprint.of(pk.approve)).font(.footnote.monospaced()) }
+                    // The fingerprint the management UI and `wga-adapter trust add` show for this device.
+                    LabeledContent("Fingerprint") { Text(Fingerprint.of(pk.approve)).font(.footnote.monospaced().weight(.semibold)) }
                     LabeledContent("Deny key") { Text(Fingerprint.of(pk.deny)).font(.footnote.monospaced()) }
                     LabeledContent("Encryption key") { Text(Fingerprint.of(pk.enc)).font(.footnote.monospaced()) }
                 }
