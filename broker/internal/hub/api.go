@@ -39,6 +39,7 @@ func (a *API) Handler() http.Handler {
 	m.HandleFunc("POST /v1/enroll", a.enroll)
 	m.HandleFunc("GET /v1/device/roster", a.device(a.deviceRoster))
 	m.HandleFunc("POST /v1/device/roster", a.device(a.postRoster))
+	m.HandleFunc("POST /v1/device/leave", a.device(a.deviceLeave))
 	m.HandleFunc("GET /v1/device/joins", a.device(a.deviceJoins))
 	m.HandleFunc("GET /v1/device/adapters", a.device(a.deviceAdapters))
 	m.HandleFunc("GET /v1/device/requests", a.device(a.deviceRequests))
@@ -227,6 +228,31 @@ func (a *API) postRoster(w http.ResponseWriter, r *http.Request, d *Device) {
 	}
 	a.audit(audit.Event{Time: a.Now(), Event: "roster", Device: d.ID, Requester: d.User,
 		Detail: fmt.Sprintf("seq %d, %d devices", h.Roster.Seq, len(h.Devices))})
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// deviceLeave: the device goes away from the hub (Store.Leave). Its token stops working.
+func (a *API) deviceLeave(w http.ResponseWriter, r *http.Request, d *Device) {
+	var in struct {
+		Roster        *protocol.Envelope `json:"roster,omitempty"`
+		DeleteAccount bool               `json:"delete_account,omitempty"`
+	}
+	if !readJSON(w, r, &in) {
+		return
+	}
+	deleted, err := a.Store.Leave(d.ID, in.Roster, in.DeleteAccount)
+	if err != nil {
+		httpErr(w, http.StatusConflict, err.Error())
+		return
+	}
+	detail := "roster unchanged"
+	switch {
+	case deleted:
+		detail = "last device: account " + d.User + " deleted"
+	case in.Roster != nil:
+		detail = "removed itself from the roster"
+	}
+	a.audit(audit.Event{Time: a.Now(), Event: "device-left", Device: d.ID, Requester: d.User, Detail: detail})
 	w.WriteHeader(http.StatusNoContent)
 }
 

@@ -495,6 +495,141 @@ func (st *Store) RevokeDevice(id string) error {
 	return st.commit()
 }
 
+// DeleteUser forgets an account: its roster, its devices and its unused codes. It is the way out when no phone on
+// the roster is left to approve another (all lost or revoked): the next enrollment for the user starts a new account,
+// with a new account fingerprint that adapters must trust again. It returns the ids of the devices it removed.
+func (st *Store) DeleteUser(id string) ([]string, error) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if _, ok := st.s.Users[id]; !ok {
+		return nil, ErrUnknown
+	}
+	gone := st.deleteUser(id)
+	return gone, st.commit()
+}
+
+// deleteUser drops a user, its devices and its codes. Callers hold the lock and commit.
+func (st *Store) deleteUser(id string) []string {
+	delete(st.s.Users, id)
+	var gone []string
+	for did, d := range st.s.Devices {
+		if d.User == id {
+			gone = append(gone, did)
+		}
+	}
+	st.dropDevices(gone)
+	codes := st.s.Codes[:0]
+	for _, c := range st.s.Codes {
+		if c.User != id {
+			codes = append(codes, c)
+		}
+	}
+	st.s.Codes = codes
+	sort.Strings(gone)
+	return gone
+}
+
+// Leave is a device going away from the hub, at its own request (its token). What happens to the account:
+//   - roster set: the next roster, signed by a member, without this device (a phone resetting its keys takes itself
+//     off the account first). The hub appends it, as for any roster.
+//   - deleteAccount: this device is the account's only member and its keys are going: nothing could ever sign the
+//     account's next roster, so the account goes too (DeleteUser).
+//   - neither: the roster stays as it is (a device that keeps its keys may come back with a join code; one that is
+//     not a member loses nothing).
+//
+// The device record goes in every case. It returns whether the account was deleted.
+func (st *Store) Leave(deviceID string, roster *protocol.Envelope, deleteAccount bool) (bool, error) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	d, ok := st.s.Devices[deviceID]
+	if !ok {
+		return false, ErrUnknown
+	}
+	u := st.s.Users[d.User]
+	switch {
+	case roster != nil && deleteAccount:
+		return false, errors.New("leave: a roster or deleting the account, not both")
+	case (roster != nil || deleteAccount) && u == nil:
+		return false, errors.New("leave: the device has no account")
+	case roster != nil:
+		old, err := st.head(u)
+		if err != nil {
+			return false, err
+		}
+		h, err := protocol.Extend(old, *roster)
+		if err != nil {
+			return false, err
+		}
+		if _, still := h.Devices[deviceID]; still {
+			return false, errors.New("leave: the roster still has this device")
+		}
+		u.Chain = append(u.Chain, *roster)
+		for id := range old.Devices {
+			if _, still := h.Devices[id]; !still && id != deviceID {
+				if o, ok := st.s.Devices[id]; ok {
+					o.Revoked, o.TokenHash = true, ""
+				}
+			}
+		}
+	case deleteAccount:
+		h, err := st.head(u)
+		if err != nil {
+			return false, err
+		}
+		if _, member := h.Devices[deviceID]; !member || len(h.Devices) != 1 {
+			return false, errors.New("leave: only an account's last device may delete it; remove this device from the roster instead")
+		}
+		st.deleteUser(u.ID)
+		return true, st.commit()
+	}
+	st.dropDevices([]string{deviceID})
+	return false, st.commit()
+}
+
+// RemoveRevokedDevices deletes the devices revoked at the hub, which are otherwise kept (and listed) for reference.
+// It returns the ids it removed.
+func (st *Store) RemoveRevokedDevices() ([]string, error) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	var gone []string
+	for did, d := range st.s.Devices {
+		if d.Revoked {
+			gone = append(gone, did)
+		}
+	}
+	if len(gone) == 0 {
+		return nil, nil
+	}
+	st.dropDevices(gone)
+	sort.Strings(gone)
+	return gone, st.commit()
+}
+
+// dropDevices deletes devices with what the hub holds for them: their sealed copies of requests and their queued
+// decisions. Callers hold the lock and commit.
+func (st *Store) dropDevices(ids []string) {
+	if len(ids) == 0 {
+		return
+	}
+	drop := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		drop[id] = true
+		delete(st.s.Devices, id)
+	}
+	for _, r := range st.s.Requests {
+		for id := range drop {
+			delete(r.Boxes, id)
+		}
+	}
+	decisions := st.s.Decisions[:0]
+	for _, q := range st.s.Decisions {
+		if !drop[q.DeviceID] {
+			decisions = append(decisions, q)
+		}
+	}
+	st.s.Decisions = decisions
+}
+
 func (st *Store) Devices() []Device {
 	st.mu.Lock()
 	defer st.mu.Unlock()

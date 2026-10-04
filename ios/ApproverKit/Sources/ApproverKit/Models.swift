@@ -134,6 +134,18 @@ public struct RosterPost: Codable, Sendable {
     public var roster: Envelope
 }
 
+/// POST /v1/device/leave: the device goes away from the hub. `roster` takes it off the account first (signed by it);
+/// `deleteAccount` is for the account's last device; neither leaves the roster as it is.
+public struct LeavePost: Codable, Sendable {
+    public var roster: Envelope?
+    public var deleteAccount: Bool?
+
+    public init(roster: Envelope? = nil, deleteAccount: Bool = false) {
+        self.roster = roster
+        self.deleteAccount = deleteAccount ? true : nil
+    }
+}
+
 public struct HubAdapter: Codable, Equatable, Sendable, Identifiable {
     public var id: String
     public var key: String

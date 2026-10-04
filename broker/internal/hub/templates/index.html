@@ -45,6 +45,17 @@ device (Face ID); this page can only hand out codes. Adapters trust users: <code
     <input type="hidden" name="user" value="{{.ID}}"><input type="hidden" name="mode" value="join">
     <button>Add a device for {{.ID}}…</button>
   </form>
+  {{if $.Me.Admin}}
+  <details style="margin-top: .5rem"><summary class="muted">Delete account…</summary>
+  <form method="post" action="/users/{{.ID}}/delete">
+    <p class="muted">For when no phone on the roster is left to approve a new one (all lost or revoked). This forgets
+    {{.ID}}'s roster and devices at the hub. Enrolling {{.ID}} again starts a new account with a new fingerprint, so
+    adapters must run <code>trust add-user</code> for it again.</p>
+    <p><label>Type <strong>{{.ID}}</strong> to confirm <input type="text" name="confirm" autocomplete="off"></label>
+      <button>Delete account</button></p>
+  </form>
+  </details>
+  {{end}}
 </div>
 {{else}}<p class="muted">No users yet.</p>{{end}}
 {{if .Me.Admin}}
@@ -80,6 +91,8 @@ device (Face ID); this page can only hand out codes. Adapters trust users: <code
 </table>
 <p class="muted">Revoking here only stops the hub serving a device. To take a device off an account, remove it on another of
 the user's phones: adapters follow the roster, not this table.</p>
+{{if .Me.Admin}}{{if .HasRevoked}}<form method="post" action="/devices/remove-revoked">
+  <button>Remove revoked devices from this list</button></form>{{end}}{{end}}
 {{else}}<p class="muted">No devices enrolled.</p>{{end}}
 
 {{if .Me.Admin}}

@@ -203,6 +203,10 @@ refused if any of these hold:
 Devices apply the same rules to their own user's chain. So the hub cannot add devices or roll back a removal an adapter has seen. It can still withhold a newer roster:
 a removal takes effect at an adapter only once that adapter sees it.
 
+An admin can also delete an account at the hub (management UI, break glass): for when none of its phones is left to
+approve another. The next enrollment of that user starts a new account with a new fingerprint, which adapters do not
+trust until `wga-adapter trust add-user` is run again; the old account's trust does not carry over.
+
 ## Hub HTTP API (transport only)
 
 Every route requires `Authorization: Bearer <token>`. Adapter tokens and device tokens are different kinds and
@@ -217,6 +221,7 @@ reach different routes. Tokens are transport credentials: they stop LAN noise an
 | `POST /v1/enroll` | new device (one-time code instead of a token) | `{code, card, genesis?}` → `{device_id, token, user, status}`. `genesis` (r1, containing this card) is required for a `new` code and refused for a `join` code. `status` is `active` (in the head roster) or `pending` (join not approved yet). |
 | `GET /v1/device/roster` | device | `{user, chain}` for the device's user |
 | `POST /v1/device/roster` | device (current member) | `{roster: envelope}`: the next roster. The hub checks it extends the chain, appends it, and stops serving devices it removes |
+| `POST /v1/device/leave` | device | `{roster?, delete_account?}`: the device goes away and the hub deletes its record. `roster` is the next roster, without this device, signed by it: it takes itself off the account first. `delete_account` is only for the account's last device (its keys are going, so nothing could sign for the account again): the hub deletes the account. Neither: the roster is unchanged and the device may come back with a join code. |
 | `GET /v1/device/joins` | device | `[{device_id, name, card, requested_at}]`: pending join requests for the device's user |
 | `GET /v1/device/adapters` | device | `[{id, key, fingerprint}]`: adapter keys to pin (trust on first use, fingerprints shown) |
 | `GET /v1/device/requests` | device | `[{id, adapter, kind, created_at, expires_at, box}]`: pending requests that have a box for this device |

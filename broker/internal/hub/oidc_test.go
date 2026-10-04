@@ -258,6 +258,12 @@ func TestOIDCSelfServiceAndAdmin(t *testing.T) {
 	if code := post(t, kim, ui.URL+"/adapters", url.Values{"id": {"x"}, "key": {"y"}}); code != http.StatusForbidden {
 		t.Fatalf("kim registering an adapter: %d", code)
 	}
+	if code := post(t, kim, ui.URL+"/users/kim/delete", url.Values{"confirm": {"kim"}}); code != http.StatusForbidden {
+		t.Fatalf("kim deleting her account (break glass is for admins): %d", code)
+	}
+	if code := post(t, kim, ui.URL+"/devices/remove-revoked", nil); code != http.StatusForbidden {
+		t.Fatalf("kim removing revoked devices: %d", code)
+	}
 	if resp, _ := get(t, kim, ui.URL+"/audit"); resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("kim reading the audit log: %d", resp.StatusCode)
 	}

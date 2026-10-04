@@ -34,6 +34,10 @@ public struct HubClient: Sendable {
         _ = try await call("POST", "/v1/device/roster", body: try Coders.encoder.encode(RosterPost(roster: env)))
     }
 
+    public func leave(_ l: LeavePost) async throws {
+        _ = try await call("POST", "/v1/device/leave", body: try Coders.encoder.encode(l))
+    }
+
     public func joins() async throws -> [HubJoin] { try list(await call("GET", "/v1/device/joins")) }
 
     public func adapters() async throws -> [HubAdapter] { try list(await call("GET", "/v1/device/adapters")) }
