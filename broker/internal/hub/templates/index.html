@@ -1,0 +1,66 @@
+{{define "index.html"}}{{template "head" .}}
+
+{{if .NewToken}}
+<div class="secret">
+  <strong>Hub token for adapter <code>{{.NewAdapter}}</code></strong> — shown once. Put it in the adapter's
+  <code>hub-token</code> file (mode 0400):<br><code>{{.NewToken}}</code>
+</div>
+{{end}}
+
+<h2>Pending and recent requests</h2>
+{{if .Requests}}
+<table>
+  <tr><th>Adapter</th><th>Request</th><th>Kind</th><th>Created</th><th>Expires</th><th>Decisions</th><th>State</th></tr>
+  {{range .Requests}}
+  <tr>
+    <td>{{.Adapter}}</td><td class="mono">{{.ID}}</td><td>{{.Kind}}</td>
+    <td>{{unix .CreatedAt}}</td><td>{{unix .ExpiresAt}}</td><td>{{.Decisions}}</td>
+    <td>{{if .Ack}}<span class="ok">resolved</span> {{ago .ResolvedAt}}{{else if expired .ExpiresAt}}<span class="muted">expired</span>{{else}}<span class="warn">pending</span>{{end}}</td>
+  </tr>
+  {{end}}
+</table>
+<p class="muted">Contents are sealed to each device; the hub only sees this metadata.</p>
+{{else}}<p class="muted">Nothing pending.</p>{{end}}
+
+<h2>Devices</h2>
+<form method="post" action="/enroll"><button>Enroll a device…</button></form>
+{{if .Devices}}
+<table>
+  <tr><th>Name</th><th>Device id</th><th>Approve key</th><th>Enrolled</th><th>Last seen</th><th></th></tr>
+  {{range .Devices}}
+  <tr class="{{if .Revoked}}revoked{{end}}">
+    <td>{{.Name}}</td><td class="mono">{{.ID}}</td><td class="mono">{{cardfp .Card}}</td>
+    <td>{{.EnrolledAt.Format "2006-01-02 15:04"}}</td><td>{{ago .LastSeen}}</td>
+    <td>{{if not .Revoked}}
+      <a href="/devices/{{.ID}}/card.json">card.json</a>
+      <form class="inline" method="post" action="/devices/{{.ID}}/revoke"><button>Revoke</button></form>
+    {{else}}revoked{{end}}</td>
+  </tr>
+  {{end}}
+</table>
+<p class="muted">An enrolled device receives nothing until an adapter trusts it. On each adapter's host:
+<code>wga-adapter trust add device-&lt;id&gt;.json</code>, and check the fingerprint it prints against the phone's Settings screen.</p>
+{{else}}<p class="muted">No devices enrolled.</p>{{end}}
+
+<h2>Adapters</h2>
+{{if .Adapters}}
+<table>
+  <tr><th>Id</th><th>Key fingerprint</th><th>Added</th><th>Last seen</th><th></th></tr>
+  {{range .Adapters}}
+  <tr>
+    <td>{{.ID}}</td><td class="mono">{{fp .Key}}</td><td>{{.AddedAt.Format "2006-01-02 15:04"}}</td><td>{{ago .LastSeen}}</td>
+    <td><form class="inline" method="post" action="/adapters/{{.ID}}/remove"><button>Remove</button></form></td>
+  </tr>
+  {{end}}
+</table>
+{{else}}<p class="muted">No adapters registered.</p>{{end}}
+
+<details style="margin-top:1rem"><summary>Register an adapter</summary>
+<form method="post" action="/adapters">
+  <p><label>Id <input type="text" name="id" placeholder="warpgate"></label></p>
+  <p><label>Public key (from <code>wga-adapter key</code>) <input type="text" name="key"></label></p>
+  <p><button>Register</button></p>
+</form>
+</details>
+
+{{template "foot" .}}{{end}}

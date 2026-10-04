@@ -17,6 +17,8 @@ type Event struct {
 	DurationS   *int64    `json:"duration_s,omitempty"`
 	Description string    `json:"description,omitempty"`
 	Detail      string    `json:"detail,omitempty"`
+	Adapter     string    `json:"adapter,omitempty"` // hub and adapters
+	Device      string    `json:"device,omitempty"`
 }
 
 type Log struct {

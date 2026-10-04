@@ -1,0 +1,120 @@
+import ApproverKit
+import SwiftUI
+
+struct InboxView: View {
+    @EnvironmentObject var model: AppModel
+    @State private var now = Date()
+
+    var body: some View {
+        List {
+            Section {
+                InsecureBanner().listRowInsets(EdgeInsets())
+            }
+            .listRowBackground(Color.clear)
+
+            Section("Pending") {
+                let live = model.requests.filter { !$0.record.isExpired(at: now) }
+                if live.isEmpty {
+                    Text("Nothing waiting").foregroundStyle(.secondary)
+                }
+                ForEach(live) { req in
+                    NavigationLink(value: req.id) { RequestRow(req: req, now: now) }
+                }
+            }
+
+            let expired = model.requests.filter { $0.record.isExpired(at: now) }
+            if !expired.isEmpty {
+                Section("Expired") {
+                    ForEach(expired) { req in RequestRow(req: req, now: now).opacity(0.4) }
+                }
+            }
+
+            if !model.decided.isEmpty {
+                Section("Decided here") {
+                    ForEach(model.decided) { d in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(sanitize(d.title)).lineLimit(1)
+                            HStack {
+                                Text(d.approve ? "Approved" : "Denied")
+                                Text("·")
+                                OutcomeText(outcome: model.outcomes[d.id])
+                            }
+                            .font(.footnote).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+
+            if !model.refused.isEmpty {
+                Section {
+                    ForEach(model.refused, id: \.self) { Text($0).font(.footnote).foregroundStyle(.red) }
+                } header: {
+                    Text("Refused (not shown)")
+                } footer: {
+                    Text("These did not open or verify against a pinned adapter key. They cannot be approved.")
+                }
+            }
+
+            if let e = model.lastError {
+                Section { Text(e).font(.footnote).foregroundStyle(.red) }
+            }
+        }
+        .navigationTitle("Requests")
+        .navigationDestination(for: String.self) { id in
+            if let req = model.requests.first(where: { $0.id == id }) ?? model.seen[id] {
+                RequestDetailView(req: req)
+            } else {
+                Text("No longer pending").foregroundStyle(.secondary)
+            }
+        }
+        .refreshable { await model.refresh() }
+        .task {
+            // Only the clock for expiry display; RootView does the polling (this task stops when a detail is pushed).
+            while !Task.isCancelled {
+                now = Date()
+                try? await Task.sleep(for: .seconds(5))
+            }
+        }
+    }
+}
+
+struct RequestRow: View {
+    let req: OpenedRequest
+    let now: Date
+
+    var body: some View {
+        let r = req.record
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                if r.isHighRisk { Image(systemName: "exclamationmark.octagon.fill").foregroundStyle(.red) }
+                Text(sanitize(r.title)).font(.headline).lineLimit(2)
+            }
+            HStack(spacing: 6) {
+                Text(sanitize(r.adapter))
+                Text("·")
+                Text(sanitize(r.requester))
+                Spacer()
+                Text(Date(timeIntervalSince1970: TimeInterval(r.expiresAt)), style: .relative)
+            }
+            .font(.footnote).foregroundStyle(.secondary)
+        }
+    }
+}
+
+struct OutcomeText: View {
+    let outcome: Outcome?
+
+    var body: some View {
+        switch outcome {
+        case .none: Text("waiting")
+        case .sent: Text("sent, waiting for the adapter")
+        case .final(let a): Text("\(a.outcome) (confirmed by \(sanitize(a.adapter)))")
+            .foregroundStyle(a.outcome == "expired" ? Color.secondary : Color.green)
+        case .note(let a):
+            Text("\(a.outcome == "rejected" ? "Rejected by adapter" : "Service call failed"): \(sanitize(a.detail ?? "")). Still pending.")
+                .foregroundStyle(.orange)
+        case .unconfirmed(let why): Text("unconfirmed: \(why)").foregroundStyle(.orange)
+        case .failed(let why): Text("not delivered: \(why)").foregroundStyle(.red)
+        }
+    }
+}

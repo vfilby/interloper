@@ -1,0 +1,58 @@
+# XcodeGen spec: `xcodegen generate` writes Approver.xcodeproj (not committed).
+name: Approver
+options:
+  bundleIdPrefix: co.filby
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+packages:
+  ApproverKit:
+    path: ApproverKit
+targets:
+  Approver:
+    type: application
+    platform: iOS
+    sources: [Approver]
+    dependencies:
+      - package: ApproverKit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.approver
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGN_STYLE: Automatic
+        MARKETING_VERSION: "0.1"
+        CURRENT_PROJECT_VERSION: "1"
+    info:
+      path: Approver/Info.plist
+      properties:
+        CFBundleDisplayName: Approver
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        NSFaceIDUsageDescription: Face ID unlocks the key that signs your approvals.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        NSLocalNetworkUsageDescription: The app talks to your approval hub on the local network.
+        CFBundleURLTypes:
+          - CFBundleURLName: com.example.approver.enroll
+            CFBundleURLSchemes: [wga]
+  ApproverUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [ApproverUITests]
+    dependencies:
+      - target: Approver
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.approver.uitests
+        SWIFT_VERSION: "5.0"
+        TEST_TARGET_NAME: Approver
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  Approver:
+    build:
+      targets:
+        Approver: all
+        ApproverUITests: [test]
+    test:
+      targets: [ApproverUITests]

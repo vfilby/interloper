@@ -158,6 +158,16 @@ func (c *Client) Deny(ctx context.Context, id, reason string) error {
 	return err
 }
 
+// Approve approves a pending request for exactly the duration it asked for (Warpgate's approve takes no body).
+// Only the clearing-house adapter calls this, after a verified device decision; the phase-1 broker never does.
+func (c *Client) Approve(ctx context.Context, id string) error {
+	code, err := c.do(ctx, http.MethodPost, "/@warpgate/admin/api/ticket-requests/"+url.PathEscape(id)+"/approve", nil, nil)
+	if code == http.StatusNotFound {
+		return ErrNotPending
+	}
+	return err
+}
+
 // TokenExpiries lists the expiry of every API token of the approver user (normally exactly one).
 func (c *Client) TokenExpiries(ctx context.Context) ([]time.Time, error) {
 	var ts []struct {
