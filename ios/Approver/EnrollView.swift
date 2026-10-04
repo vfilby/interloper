@@ -3,42 +3,30 @@ import AuthenticationServices
 import SwiftUI
 import UIKit
 
+/// Onboarding, in three steps:
+///   1. Interloper server: the person enters its address; the app checks it is one (/app/hello).
+///   2. Continue on the server: the person signs in there (two-factor), and the server hands the app an enrollment
+///      link for them: a new account the first time, otherwise another device to approve on one they have.
+///   3. Connect this device: name it (and set the app PIN on a device with a Secure Enclave), then enroll.
+/// An enrollment link or QR code from the management page is the other way in; it goes straight to step 3.
+/// Also used as a sheet from an enrolled device, to connect it to another server (or again to the same one).
 struct EnrollView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
-    /// Shown as a sheet from an enrolled device: moving to another hub, or re-enrolling at the same one.
+    @Environment(\.webAuthenticationSession) private var webAuth
     var switching = false
+
+    @AppStorage("signInAddress") private var address = ""
+    @State private var server: (base: URL, info: ServerInfo)?
+    @State private var localUser = ""
+    @State private var usingLink = false
     @State private var linkText = ""
     @State private var name = UIDevice.current.name
     @State private var pin = ""
-    @State private var working = false
-    @AppStorage("signInAddress") private var signInAddress = ""
-    @State private var signingIn = false
-    @State private var signInError: String?
-    @Environment(\.webAuthenticationSession) private var webAuth
+    @State private var busy = false
+    @State private var stepError: String?
 
-    /// Opens the hub's sign-in in a private browser session (no shared cookies, no "wants to sign in" prompt) and waits
-    /// for the hub to send back a wga://enroll link.
-    private func signIn() async {
-        guard let start = SignIn.startURL(signInAddress) else { return }
-        signingIn = true
-        signInError = nil
-        defer { signingIn = false }
-        do {
-            let back = try await webAuth.authenticate(using: start, callbackURLScheme: "wga", preferredBrowserSession: .ephemeral)
-            guard let l = EnrollmentLink(back.absoluteString) else {
-                signInError = "The hub answered with something that is not an enrollment link."
-                return
-            }
-            model.pendingLink = l
-        } catch {
-            if (error as? ASWebAuthenticationSessionError)?.code != .canceledLogin {
-                signInError = error.localizedDescription
-            }
-        }
-    }
-
-    private var link: EnrollmentLink? { model.pendingLink ?? EnrollmentLink(linkText) }
+    private var link: EnrollmentLink? { model.pendingLink ?? (usingLink ? EnrollmentLink(linkText) : nil) }
     /// New Secure Enclave keys need the app PIN set now. Existing keys only use it as Face ID's fallback.
     private var newKeys: Bool { !model.keys.hasKeys() }
     private var needsPIN: Bool { !model.isInsecure && newKeys }
@@ -52,60 +40,170 @@ struct EnrollView: View {
 
             if switching {
                 Section {
-                    LabeledContent("Current hub", value: model.hubURL?.absoluteString ?? "—")
+                    LabeledContent("Connected to", value: model.hubURL?.host() ?? "—")
                 } footer: {
-                    Text("Enrolling here replaces the current hub once the new one accepts this device. The device keys are kept, so adapters that already trust this device keep trusting it; requests and pins from the old hub are dropped.")
+                    Text("Connecting here replaces the current server once the new one accepts this device. The device keys are kept, so adapters that trust your account keep trusting this device.")
                 }
             }
 
-            if model.pendingLink == nil {
-                Section {
-                    TextField("https://approvals.home.example", text: $signInAddress)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .keyboardType(.URL)
-                        .font(.footnote.monospaced())
-                    Button {
-                        Task { await signIn() }
-                    } label: {
-                        HStack {
-                            Label("Sign in to get a code", systemImage: "person.badge.key")
-                            if signingIn { Spacer(); ProgressView() }
-                        }
-                    }
-                    .disabled(SignIn.startURL(signInAddress) == nil || signingIn)
-                    if let e = signInError { Text(e).font(.footnote).foregroundStyle(.red) }
-                } header: {
-                    Text("Sign in")
-                } footer: {
-                    Text("The hub's management address. You sign in with your usual account (two-factor); the hub then hands this app a code for you: a new account the first time, otherwise another device that one of your phones must approve. Nothing is remembered: you sign in each time.")
-                }
+            if model.pendingLink != nil {
+                connectStep
+            } else if usingLink {
+                linkStep
+                if link != nil { connectStep }
+            } else if let server {
+                signInStep(server.base, server.info)
+            } else {
+                serverStep
             }
 
-            Section(model.pendingLink == nil ? "Or use an enrollment link" : "Enrollment link") {
-                if let l = model.pendingLink {
-                    LabeledContent("Hub", value: l.hub.absoluteString)
-                    LabeledContent("Account", value: l.user)
-                    LabeledContent("Enrolls as", value: l.mode == .new ? "first device of a new account" : "another device (needs approval)")
-                } else {
-                    TextField("wga://enroll?hub=…&code=…", text: $linkText, axis: .vertical)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .font(.footnote.monospaced())
-                    PasteButton(payloadType: String.self) { strings in
-                        if let s = strings.first { linkText = s.trimmingCharacters(in: .whitespacesAndNewlines) }
-                    }
-                    Text("Scan the QR code in the management UI with the Camera app, or paste the link shown under it. Simulator: run the `xcrun simctl openurl` command shown on the enroll page.")
-                        .font(.footnote).foregroundStyle(.secondary)
-                    if !linkText.isEmpty, let err = linkError(linkText) {
-                        Text(err).font(.footnote).foregroundStyle(.red)
-                    } else if let l = EnrollmentLink(linkText) {
-                        Text("Account \(l.user): \(l.mode == .new ? "first device of a new account" : "another device, approved on one you already have")")
-                            .font(.footnote)
+            if let e = stepError ?? model.lastError {
+                Section { Text(e).foregroundStyle(.red).font(.footnote) }
+            }
+        }
+        .navigationTitle(switching ? "Connect to a server" : "Connect to Interloper")
+        .toolbar {
+            if switching {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+            }
+        }
+    }
+
+    // MARK: step 1: the server
+
+    private var serverStep: some View {
+        Group {
+            Section {
+                TextField("approvals.home.example", text: $address)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.URL)
+                    .submitLabel(.continue)
+                    .onSubmit { Task { await checkServer() } }
+                Button {
+                    Task { await checkServer() }
+                } label: {
+                    HStack {
+                        Text("Continue")
+                        if busy { Spacer(); ProgressView() }
                     }
                 }
+                .disabled(SignIn.base(address) == nil || busy)
+            } header: {
+                Text("Interloper server")
+            } footer: {
+                Text("The address of your Interloper server: the page you manage it from.")
             }
+            Section {
+                Button("I have an enrollment link or QR code") { usingLink = true; stepError = nil }
+            } footer: {
+                Text("From the server's management page. Scanning its QR code with the Camera app opens this app with it.")
+            }
+        }
+    }
 
+    private func checkServer() async {
+        guard let base = SignIn.base(address), !busy else { return }
+        busy = true
+        stepError = nil
+        defer { busy = false }
+        do {
+            server = (base, try await SignIn.hello(base))
+        } catch {
+            stepError = error.localizedDescription
+        }
+    }
+
+    // MARK: step 2: continue on the server
+
+    @ViewBuilder
+    private func signInStep(_ base: URL, _ info: ServerInfo) -> some View {
+        Section {
+            LabeledContent("Server", value: base.host() ?? base.absoluteString)
+            Button("Change server") { server = nil; stepError = nil }
+        }
+        Section {
+            if info.isLocal {
+                TextField("Your user id", text: $localUser)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+            }
+            Button {
+                Task { await continueOnServer(base, info) }
+            } label: {
+                HStack {
+                    Label("Continue on \(base.host() ?? "the server")", systemImage: "person.badge.key")
+                    if busy { Spacer(); ProgressView() }
+                }
+            }
+            .disabled(busy || (info.isLocal && localUser.isEmpty))
+        } header: {
+            Text("Register this device")
+        } footer: {
+            Text(info.isLocal
+                 ? "A development server without sign-in: it registers this device for the user id you give."
+                 : "You sign in on the server with your usual account (two-factor) and it registers this device for you: a new account the first time, otherwise another device that one of your phones approves. Nothing is remembered here: you sign in each time.")
+        }
+    }
+
+    /// Opens the server in a private browser session (no shared cookies, no "wants to sign in" prompt) and waits for
+    /// it to send back a wga://enroll link.
+    private func continueOnServer(_ base: URL, _ info: ServerInfo) async {
+        busy = true
+        stepError = nil
+        defer { busy = false }
+        do {
+            let back = try await webAuth.authenticate(using: SignIn.enrollURL(base, user: info.isLocal ? localUser : nil),
+                                                      callbackURLScheme: "wga", preferredBrowserSession: .ephemeral)
+            guard let l = EnrollmentLink(back.absoluteString) else {
+                stepError = "The server answered with something that is not an enrollment link."
+                return
+            }
+            model.pendingLink = l
+        } catch {
+            if (error as? ASWebAuthenticationSessionError)?.code != .canceledLogin {
+                stepError = error.localizedDescription
+            }
+        }
+    }
+
+    // MARK: the other way in: a link
+
+    private var linkStep: some View {
+        Section {
+            TextField("wga://enroll?hub=…&code=…", text: $linkText, axis: .vertical)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .font(.footnote.monospaced())
+            PasteButton(payloadType: String.self) { strings in
+                if let s = strings.first { linkText = s.trimmingCharacters(in: .whitespacesAndNewlines) }
+            }
+            if !linkText.isEmpty, let err = linkError(linkText) {
+                Text(err).font(.footnote).foregroundStyle(.red)
+            }
+            Button("Use the server address instead") { usingLink = false; linkText = "" }
+        } header: {
+            Text("Enrollment link")
+        } footer: {
+            Text("Paste the link shown under the QR code. Simulator: run the `xcrun simctl openurl` command shown on the enroll page.")
+        }
+    }
+
+    // MARK: step 3: connect this device
+
+    @ViewBuilder
+    private var connectStep: some View {
+        if let l = link {
+            Section {
+                LabeledContent("Server", value: l.hub.host() ?? l.hub.absoluteString)
+                LabeledContent("Account", value: l.user)
+                LabeledContent("Joins as", value: l.mode == .new ? "first device of a new account" : "another device (needs approval)")
+                if model.pendingLink != nil {
+                    Button("Start over") { model.pendingLink = nil; server = nil; usingLink = false }
+                }
+            } header: {
+                Text("Connect this device")
+            }
             Section("This device") {
                 TextField("Name", text: $name)
                 if needsPIN {
@@ -116,38 +214,26 @@ struct EnrollView: View {
                         .keyboardType(.numberPad)
                 }
             }
-
             Section {
                 Button {
-                    guard let link else { return }
-                    working = true
+                    busy = true
                     Task {
-                        await model.enroll(link, name: name, pin: pin.isEmpty ? nil : pin)
-                        working = false
+                        await model.enroll(l, name: name, pin: pin.isEmpty ? nil : pin)
+                        busy = false
                     }
                 } label: {
                     HStack {
-                        Text(switching ? "Enroll with this hub" : "Enroll")
-                        if working { Spacer(); ProgressView() }
+                        Text("Connect this device")
+                        if busy { Spacer(); ProgressView() }
                     }
                 }
-                .disabled(link == nil || working || name.isEmpty || (needsPIN && pin.count < 6))
+                .disabled(busy || name.isEmpty || (needsPIN && pin.count < 6))
             } footer: {
-                if link?.mode == .join {
+                if l.mode == .join {
                     Text("Signs this device's card (Face ID) and asks to join the account. It can approve nothing until a device already on the account approves it there; compare this device's fingerprint on both screens.")
                 } else {
-                    Text("Creates this device's keys if needed, signs its card and the account's first roster (Face ID) and registers them with the hub. The hub cannot add devices to the account; adapters trust the account by its fingerprint.")
+                    Text("Creates this device's keys if needed, signs its card and the account's first roster (Face ID) and registers them. The server cannot add devices to the account; adapters trust the account by its fingerprint.")
                 }
-            }
-
-            if let e = model.lastError {
-                Section { Text(e).foregroundStyle(.red).font(.footnote) }
-            }
-        }
-        .navigationTitle(switching ? "Enroll with another hub" : "Enroll")
-        .toolbar {
-            if switching {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
             }
         }
     }

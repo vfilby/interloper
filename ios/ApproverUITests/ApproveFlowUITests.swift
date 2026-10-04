@@ -13,23 +13,34 @@ final class ApproveFlowUITests: XCTestCase {
         app.launchArguments = ["-wgaReset"]
         app.launch()
 
-        // Phone sign-in: the app opens the hub's sign-in in a private browser session and gets a code back.
-        let address = app.textFields["https://approvals.home.example"]
-        XCTAssertTrue(address.waitForExistence(timeout: 10), "no sign-in address field on the Enroll screen")
+        // Step 1: the Interloper server. Return submits, and the app checks the address is one (/app/hello).
+        let address = app.textFields["approvals.home.example"]
+        XCTAssertTrue(address.waitForExistence(timeout: 10), "the app does not open on the server step")
+        attach(app, "server-step")
         address.tap()
         if let old = address.value as? String, !old.isEmpty, old != address.placeholderValue {
             address.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: old.count)) // a remembered address
         }
-        address.typeText(admin + "/app/enroll?user=vince\n") // Return closes the keyboard, which otherwise covers the form
-        let signIn = app.buttons["Sign in to get a code"]
-        scrollTo(signIn, in: app)
-        signIn.tap()
+        address.typeText(admin + "\n")
+
+        // Step 2: continue on the server. This hub is in local mode, so it asks for a user id instead of a sign-in;
+        // the app still opens the server in a private browser session and gets the enrollment link back.
+        let user = app.textFields["Your user id"]
+        XCTAssertTrue(user.waitForExistence(timeout: 10), "the server was not accepted")
+        user.tap()
+        user.typeText("vince\n")
+        let onServer = app.buttons.containing(NSPredicate(format: "label BEGINSWITH 'Continue on'")).firstMatch
+        scrollTo(onServer, in: app)
+        attach(app, "server-accepted")
+        onServer.tap()
+
+        // Step 3: connect this device.
         let newAccount = app.staticTexts.containing(NSPredicate(format: "label CONTAINS 'first device of a new account'")).firstMatch
-        XCTAssertTrue(newAccount.waitForExistence(timeout: 20), "sign-in brought back no code")
-        attach(app, "signed-in")
-        let enroll = app.buttons["Enroll"]
-        scrollTo(enroll, in: app)
-        enroll.tap()
+        XCTAssertTrue(newAccount.waitForExistence(timeout: 20), "the server sent back no enrollment link")
+        attach(app, "connect-step")
+        let connect = app.buttons["Connect this device"]
+        scrollTo(connect, in: app)
+        connect.tap()
 
         let done = app.buttons["Done"]
         XCTAssertTrue(done.waitForExistence(timeout: 20), "enrollment summary did not appear")
@@ -66,17 +77,20 @@ final class ApproveFlowUITests: XCTestCase {
         // Typed in as a person would paste it. Then leave the hub.
         let link2 = try joinLink(admin: admin, user: "vince")
         app.tabBars.buttons["Device"].tap()
-        let another = app.buttons["Enroll with another hub…"]
+        let another = app.buttons["Connect to another server…"]
         scrollTo(another, in: app) // below the Account section; SwiftUI lists load rows lazily
         another.tap()
-        let field = app.textFields["wga://enroll?hub=…&code=…"] // the link field, not the sign-in address above it
-        XCTAssertTrue(field.waitForExistence(timeout: 5), "switch-hub sheet did not open")
+        let useLink = app.buttons["I have an enrollment link or QR code"]
+        XCTAssertTrue(useLink.waitForExistence(timeout: 5), "connect sheet did not open on the server step")
+        useLink.tap()
+        let field = app.textFields["wga://enroll?hub=…&code=…"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5), "no link field")
         field.tap()
         field.typeText(link2)
         attach(app, "switch-hub")
-        let enrollHere = app.buttons["Enroll with this hub"]
-        scrollTo(enrollHere, in: app) // the keyboard covers the lower half of the sheet
-        enrollHere.tap()
+        let connectHere = app.buttons["Connect this device"]
+        scrollTo(connectHere, in: app) // the keyboard covers the lower half of the sheet
+        connectHere.tap()
         XCTAssertTrue(app.buttons["Done"].waitForExistence(timeout: 20), "re-enrollment summary did not appear")
         app.buttons["Done"].tap()
 
@@ -84,7 +98,7 @@ final class ApproveFlowUITests: XCTestCase {
         scrollTo(leave, in: app)
         leave.tap()
         app.buttons["Leave hub"].tap()
-        XCTAssertTrue(app.navigationBars["Enroll"].waitForExistence(timeout: 5), "leaving did not return to Enroll")
+        XCTAssertTrue(app.textFields["approvals.home.example"].waitForExistence(timeout: 5), "leaving did not return to the server step")
         attach(app, "left-hub")
     }
 

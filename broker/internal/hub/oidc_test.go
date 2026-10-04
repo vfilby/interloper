@@ -376,3 +376,14 @@ func TestSafeNext(t *testing.T) {
 		}
 	}
 }
+
+// /app/hello answers without a session, so the app can check a server before anyone signs in.
+func TestAppHelloIsPublic(t *testing.T) {
+	_, ui, _, browser := hubWithIdP(t)
+	c := browser()
+	c.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	resp, body := get(t, c, ui.URL+"/app/hello")
+	if resp.StatusCode != http.StatusOK || !strings.Contains(body, `"signin":"oidc"`) {
+		t.Fatalf("hello behind OIDC: %d %s", resp.StatusCode, body)
+	}
+}

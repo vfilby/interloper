@@ -76,6 +76,7 @@ func (a *Admin) Handler() http.Handler {
 	m.HandleFunc("POST /enroll", a.enroll)
 	m.HandleFunc("GET /enroll/{id}", a.enrollPage)
 	m.HandleFunc("GET /enroll/{id}/status", a.enrollStatus)
+	m.HandleFunc("GET /app/hello", a.appHello)
 	m.HandleFunc("GET /app/enroll", a.appEnroll)
 	m.HandleFunc("POST /devices/{id}/revoke", a.revoke)
 	m.HandleFunc("POST /adapters", a.admin(a.addAdapter))
@@ -84,7 +85,7 @@ func (a *Admin) Handler() http.Handler {
 	m.HandleFunc("GET /login", a.Auth.Login)
 	m.HandleFunc("GET /oidc/callback", a.Auth.Callback)
 	m.HandleFunc("POST /logout", a.Auth.Logout)
-	return sameOrigin(securityHeaders(a.Auth.Middleware(m, "/login", "/oidc/callback")))
+	return sameOrigin(securityHeaders(a.Auth.Middleware(m, "/login", "/oidc/callback", "/app/hello")))
 }
 
 // admin restricts a handler to admins (the admin group, or everyone in local mode).
@@ -243,6 +244,18 @@ func (a *Admin) enroll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/enroll/"+id, http.StatusSeeOther)
+}
+
+// appHello lets the app check, before anyone signs in, that an address is an Interloper server, and learn how to
+// continue: "oidc" (sign in on the server) or "local" (development: no sign-in; the app asks for a user id). Public,
+// and says nothing about anyone.
+func (a *Admin) appHello(w http.ResponseWriter, _ *http.Request) {
+	signin := "oidc"
+	if a.Auth.Local {
+		signin = "local"
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"service": "interloper", "version": protocol.Version, "signin": signin, "api": a.HubURL})
 }
 
 // appEnroll is phone sign-in: the app opens it in a private browser session, the person signs in, and the hub

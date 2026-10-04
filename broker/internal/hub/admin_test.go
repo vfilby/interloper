@@ -1,6 +1,7 @@
 package hub
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -154,5 +155,18 @@ func TestEnrollPageFollowsTheCode(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Fatalf("overview lacks %q", want)
 		}
+	}
+}
+
+func TestAppHello(t *testing.T) {
+	st, err := Open(filepath.Join(t.TempDir(), "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	(&Admin{Store: st, HubURL: "http://hub.test:8740"}).Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "http://127.0.0.1:8741/app/hello", nil))
+	var hello map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &hello); err != nil || hello["service"] != "interloper" || hello["signin"] != "local" || hello["api"] != "http://hub.test:8740" {
+		t.Fatalf("hello: %d %s", rec.Code, rec.Body.String())
 	}
 }
