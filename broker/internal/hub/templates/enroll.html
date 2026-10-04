@@ -1,0 +1,9 @@
+{{define "enroll.html"}}{{template "head" .}}
+<p>Scan with the iPhone camera (opens the Approver app), or paste the link into the app's Enroll screen.
+The code works once and expires at {{.Expiry.Local.Format "15:04:05"}}.</p>
+{{if .QR}}<p><img src="{{.QR}}" alt="enrollment QR code" width="300" height="300" style="image-rendering: pixelated"></p>{{end}}
+<p><code style="word-break: break-all">{{.Link}}</code></p>
+<p class="muted">After enrolling, the phone shows its approve-key fingerprint. Add the device's card to each adapter that should
+send it requests, and compare the fingerprint there.</p>
+<p><a href="/">Back to overview</a></p>
+{{template "foot" .}}{{end}}

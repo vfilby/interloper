@@ -1,0 +1,5 @@
+{{define "audit.html"}}{{template "head" .}}
+<p class="muted">Newest first, last 200 events. Transport events only: what was published, queued and acknowledged.</p>
+{{if .Lines}}<pre class="mono" style="white-space: pre-wrap">{{range .Lines}}{{.}}
+{{end}}</pre>{{else}}<p class="muted">Empty.</p>{{end}}
+{{template "foot" .}}{{end}}
