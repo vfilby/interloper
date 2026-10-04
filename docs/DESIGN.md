@@ -211,9 +211,17 @@ the internet) is untrusted and can at most drop or delay messages. Everything fa
 ### 2. iOS app
 
 - **Approval key**: Secure Enclave P-256, `kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly`, access control
-  `.privateKeyUsage` + `[.biometryCurrentSet, .or, .applicationPassword]`.
-  - `biometryCurrentSet`: newly enrolled faces or fingers invalidate the key, so a thief who knows the passcode can't add their own face.
-  - `applicationPassword`: the "PIN" is the app's own PIN, enforced by the Secure Enclave, **not** the device passcode.
+  `.privateKeyUsage` + `.applicationPassword`: the "PIN" is the app's own PIN, enforced by the Secure Enclave, **not**
+  the device passcode.
+  - Face ID: a copy of the PIN sits in a keychain item with `.biometryCurrentSet`. Approving reads it with Face ID and
+    hands it to the key in the same `LAContext`: one prompt. If Face ID fails or is cancelled, iOS asks for the PIN.
+  - Why not `[.biometryCurrentSet, .or, .applicationPassword]` on the key: iOS then asks for the password even after
+    Face ID succeeds (seen on a real phone, 2026-10-04; a known, unanswered Apple forums issue), and the PIN alone
+    cannot sign. Keys made that way still work: the stored PIN supplies the password once the person has approved with
+    the PIN typed in the app.
+  - `biometryCurrentSet`: newly enrolled faces or fingers make the stored PIN unreadable, so a thief who knows the
+    passcode and adds their own face still needs the app PIN.
+  - Cost: the PIN passes through the app's memory when Face ID is used.
 - **Deny key**: second SE key, device-unlocked only (no biometry). Deny is safe-direction but still signed.
 - **Decrypt key**: SE P-256 key-agreement key, no biometry, `AfterFirstUnlockThisDeviceOnly`, used by the Notification
   Service Extension to decrypt pushes.
