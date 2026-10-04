@@ -9,6 +9,7 @@ approvals: SSH tickets, held mail, scoped MCP leases (Paperless).
 - iOS app (native SwiftUI): [ios/README.md](ios/README.md)
 - Phase 1 deploy (broker + Pushover on bastion): [docs/runbooks/deploy-phase1.md](docs/runbooks/deploy-phase1.md)
 - Hub sign-in with Authelia (OIDC): [docs/runbooks/oidc.md](docs/runbooks/oidc.md)
+- TestFlight beta of the iOS app: [docs/runbooks/testflight.md](docs/runbooks/testflight.md)
 - The Warpgate/bastion side (bastion-ssh, bastion-ssh-ticket, hosts.toml `[approvers.approver]`, bastion-apply) lives in
   `infra/bastion`.
 
