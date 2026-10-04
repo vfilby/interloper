@@ -1,4 +1,5 @@
 import ApproverKit
+import AuthenticationServices
 import SwiftUI
 import UIKit
 
@@ -11,6 +12,31 @@ struct EnrollView: View {
     @State private var name = UIDevice.current.name
     @State private var pin = ""
     @State private var working = false
+    @AppStorage("signInAddress") private var signInAddress = ""
+    @State private var signingIn = false
+    @State private var signInError: String?
+    @Environment(\.webAuthenticationSession) private var webAuth
+
+    /// Opens the hub's sign-in in a private browser session (no shared cookies, no "wants to sign in" prompt) and waits
+    /// for the hub to send back a wga://enroll link.
+    private func signIn() async {
+        guard let start = SignIn.startURL(signInAddress) else { return }
+        signingIn = true
+        signInError = nil
+        defer { signingIn = false }
+        do {
+            let back = try await webAuth.authenticate(using: start, callbackURLScheme: "wga", preferredBrowserSession: .ephemeral)
+            guard let l = EnrollmentLink(back.absoluteString) else {
+                signInError = "The hub answered with something that is not an enrollment link."
+                return
+            }
+            model.pendingLink = l
+        } catch {
+            if (error as? ASWebAuthenticationSessionError)?.code != .canceledLogin {
+                signInError = error.localizedDescription
+            }
+        }
+    }
 
     private var link: EnrollmentLink? { model.pendingLink ?? EnrollmentLink(linkText) }
     /// New Secure Enclave keys need the app PIN set now. Existing keys only use it as Face ID's fallback.
@@ -32,7 +58,31 @@ struct EnrollView: View {
                 }
             }
 
-            Section("Enrollment link") {
+            if model.pendingLink == nil {
+                Section {
+                    TextField("https://approvals.home.example", text: $signInAddress)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.URL)
+                        .font(.footnote.monospaced())
+                    Button {
+                        Task { await signIn() }
+                    } label: {
+                        HStack {
+                            Label("Sign in to get a code", systemImage: "person.badge.key")
+                            if signingIn { Spacer(); ProgressView() }
+                        }
+                    }
+                    .disabled(SignIn.startURL(signInAddress) == nil || signingIn)
+                    if let e = signInError { Text(e).font(.footnote).foregroundStyle(.red) }
+                } header: {
+                    Text("Sign in")
+                } footer: {
+                    Text("The hub's management address. You sign in with your usual account (two-factor); the hub then hands this app a code for you: a new account the first time, otherwise another device that one of your phones must approve. Nothing is remembered: you sign in each time.")
+                }
+            }
+
+            Section(model.pendingLink == nil ? "Or use an enrollment link" : "Enrollment link") {
                 if let l = model.pendingLink {
                     LabeledContent("Hub", value: l.hub.absoluteString)
                     LabeledContent("Account", value: l.user)

@@ -19,10 +19,15 @@ struct ApproverApp: App {
                     }
                 }
                 #if DEBUG && targetEnvironment(simulator)
-                // UI tests: `-wgaAutoEnroll <link>` resets and enrolls without a tap (the simulator keychain outlives an
-                // uninstall, so a previous run's enrollment would linger). Simulator debug builds only.
+                // UI tests: `-wgaReset` starts from nothing (the simulator keychain outlives an uninstall, so a previous
+                // run's enrollment would linger); `-wgaAutoEnroll <link>` also enrolls without a tap. Simulator debug
+                // builds only.
                 .task {
                     let args = ProcessInfo.processInfo.arguments
+                    if args.contains("-wgaReset") {
+                        model.reset()
+                        UserDefaults.standard.removeObject(forKey: "signInAddress")
+                    }
                     if let i = args.firstIndex(of: "-wgaAutoEnroll"), i + 1 < args.count, let link = EnrollmentLink(args[i + 1]) {
                         model.reset()
                         await model.enroll(link, name: "Simulator UI test", pin: nil)

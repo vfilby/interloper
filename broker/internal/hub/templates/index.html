@@ -7,6 +7,7 @@
 </div>
 {{end}}
 
+{{if .Me.Admin}}
 <h2>Pending and recent requests</h2>
 {{if .Requests}}
 <table>
@@ -22,7 +23,9 @@
 <p class="muted">Contents are sealed to each device; the hub only sees this metadata.</p>
 {{else}}<p class="muted">Nothing pending.</p>{{end}}
 
-<h2 id="users">Users</h2>
+{{end}}
+
+<h2 id="users">{{if .Me.Admin}}Users{{else}}Your account{{end}}</h2>
 <p class="muted">A user's devices are whatever their signed roster says. Only one of the user's own phones can add or remove a
 device (Face ID); this page can only hand out codes. Adapters trust users: <code>wga-adapter trust add-user &lt;user&gt;
 &lt;account fingerprint&gt;</code>.</p>
@@ -44,6 +47,7 @@ device (Face ID); this page can only hand out codes. Adapters trust users: <code
   </form>
 </div>
 {{else}}<p class="muted">No users yet.</p>{{end}}
+{{if .Me.Admin}}
 <details style="margin-top:.6rem" {{if not .Users}}open{{end}}><summary>New user</summary>
 <form method="post" action="/enroll">
   <p><label>User id (a-z 0-9 . _ -) <input type="text" name="user" placeholder="vince"></label></p>
@@ -51,6 +55,13 @@ device (Face ID); this page can only hand out codes. Adapters trust users: <code
   <p><button>Create, and enroll their first phone…</button></p>
 </form>
 </details>
+{{else if not .HasAccount}}
+<form method="post" action="/enroll">
+  <input type="hidden" name="user" value="{{.Me.User}}"><input type="hidden" name="mode" value="new">
+  <p>You have no account here yet. <button>Create it, and enroll my first phone…</button></p>
+</form>
+{{end}}
+<p class="muted">On a phone you can also skip the code: in the Approver app, use <em>Sign in</em> on the Enroll screen.</p>
 
 <h2 id="devices">Devices at the hub</h2>
 {{if .Devices}}
@@ -71,6 +82,7 @@ device (Face ID); this page can only hand out codes. Adapters trust users: <code
 the user's phones: adapters follow the roster, not this table.</p>
 {{else}}<p class="muted">No devices enrolled.</p>{{end}}
 
+{{if .Me.Admin}}
 <h2>Adapters</h2>
 {{if .Adapters}}
 <table>
@@ -91,5 +103,6 @@ the user's phones: adapters follow the roster, not this table.</p>
   <p><button>Register</button></p>
 </form>
 </details>
+{{end}}
 
 {{template "foot" .}}{{end}}

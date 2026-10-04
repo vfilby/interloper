@@ -51,32 +51,57 @@ var tmpl = template.Must(template.New("").Funcs(template.FuncMap{
 	"expired": func(s int64) bool { return time.Now().Unix() > s },
 }).ParseFS(templatesFS, "templates/*.html"))
 
-// Admin is the management UI. It must only be reachable from the LAN/VPN and only behind an authenticating proxy
-// (a Warpgate HTTP target or Authelia): it has no login of its own. What it can do is bounded on purpose: enroll a
-// device for transport, revoke, register an adapter for transport. None of that makes a device trusted by an
-// adapter, so taking over this UI does not let anyone approve anything.
+// Admin is the management UI, signed in through OIDC (Auth). Admins see and manage everything; everyone else sees
+// their own account, issues codes for it and revokes their own devices. What it can do is bounded on purpose: hand
+// out enrollment codes, revoke transport, register adapters for transport. None of that puts a device on anyone's
+// roster, so taking over this UI does not let anyone approve anything.
 type Admin struct {
 	Store     *Store
 	Audit     *audit.Log
 	AuditPath string
 	HubURL    string // what devices use, put into the enrollment link
 	Log       *slog.Logger
+	Auth      *Auth // nil: local mode (no sign-in; loopback only)
 
 	linksMu sync.Mutex
 	links   map[string]string // code id -> enrollment link, until used or expired (never written to disk)
 }
 
 func (a *Admin) Handler() http.Handler {
+	if a.Auth == nil {
+		a.Auth = LocalAuth()
+	}
 	m := http.NewServeMux()
 	m.HandleFunc("GET /{$}", a.index)
 	m.HandleFunc("POST /enroll", a.enroll)
 	m.HandleFunc("GET /enroll/{id}", a.enrollPage)
 	m.HandleFunc("GET /enroll/{id}/status", a.enrollStatus)
+	m.HandleFunc("GET /app/enroll", a.appEnroll)
 	m.HandleFunc("POST /devices/{id}/revoke", a.revoke)
-	m.HandleFunc("POST /adapters", a.addAdapter)
-	m.HandleFunc("POST /adapters/{id}/remove", a.removeAdapter)
-	m.HandleFunc("GET /audit", a.audit)
-	return sameOrigin(securityHeaders(m))
+	m.HandleFunc("POST /adapters", a.admin(a.addAdapter))
+	m.HandleFunc("POST /adapters/{id}/remove", a.admin(a.removeAdapter))
+	m.HandleFunc("GET /audit", a.admin(a.audit))
+	m.HandleFunc("GET /login", a.Auth.Login)
+	m.HandleFunc("GET /oidc/callback", a.Auth.Callback)
+	m.HandleFunc("POST /logout", a.Auth.Logout)
+	return sameOrigin(securityHeaders(a.Auth.Middleware(m, "/login", "/oidc/callback")))
+}
+
+// admin restricts a handler to admins (the admin group, or everyone in local mode).
+func (a *Admin) admin(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !Who(r).Admin {
+			http.Error(w, "admins only", http.StatusForbidden)
+			return
+		}
+		h(w, r)
+	}
+}
+
+// may reports whether the signed-in person may act for user: admins for anyone, others for themselves.
+func may(r *http.Request, user string) bool {
+	id := Who(r)
+	return id.Admin || (id.User != "" && id.User == user)
 }
 
 // sameOrigin refuses cross-site form posts (CSRF): the proxy in front authenticates by cookie.
@@ -127,12 +152,14 @@ func securityHeaders(h http.Handler) http.Handler {
 }
 
 type page struct {
-	Title    string
-	Users    []UserView
-	Adapters []Adapter
-	Devices  []Device
-	Requests []Request
-	Flash    string
+	Title      string
+	Me         Identity
+	HasAccount bool // a non-admin who already has a user (offer "add a device", not "create")
+	Users      []UserView
+	Adapters   []Adapter
+	Devices    []Device
+	Requests   []Request
+	Flash      string
 	// enrollment
 	Link     string
 	QR       template.URL
@@ -157,26 +184,40 @@ func (a *Admin) render(w http.ResponseWriter, name string, p page) {
 	}
 }
 
-func (a *Admin) overview(flash string) page {
-	return page{Title: "Clearing house", Users: a.Store.Users(), Adapters: a.Store.Adapters(), Devices: a.Store.Devices(),
-		Requests: a.Store.Requests(), Flash: flash}
+// overview is what the signed-in person may see: everything for admins; their own user and devices otherwise.
+func (a *Admin) overview(r *http.Request, flash string) page {
+	me := Who(r)
+	p := page{Title: "Clearing house", Me: me, Flash: flash}
+	if me.Admin {
+		p.Users, p.Adapters, p.Devices, p.Requests = a.Store.Users(), a.Store.Adapters(), a.Store.Devices(), a.Store.Requests()
+		return p
+	}
+	for _, u := range a.Store.Users() {
+		if u.ID == me.User {
+			p.Users = append(p.Users, u)
+		}
+	}
+	for _, d := range a.Store.Devices() {
+		if d.User == me.User {
+			p.Devices = append(p.Devices, d)
+		}
+	}
+	p.HasAccount = len(p.Users) > 0
+	return p
 }
 
-func (a *Admin) index(w http.ResponseWriter, _ *http.Request) {
-	a.render(w, "index.html", a.overview(""))
+func (a *Admin) index(w http.ResponseWriter, r *http.Request) {
+	a.render(w, "index.html", a.overview(r, ""))
 }
 
-// enroll issues a code for a user (form: user, mode new|join) and sends the browser to its own page, which follows
-// it until a phone uses it.
-func (a *Admin) enroll(w http.ResponseWriter, r *http.Request) {
+// issue makes a code for user and mode and returns its id and enrollment link.
+func (a *Admin) issue(user, mode, via string) (id, link string, err error) {
 	now := time.Now()
-	user, mode := strings.TrimSpace(r.FormValue("user")), r.FormValue("mode")
 	code, id, err := a.Store.NewEnrollCode(now, user, mode)
 	if err != nil {
-		a.render(w, "index.html", a.overview(err.Error()))
-		return
+		return "", "", err
 	}
-	link := "wga://enroll?hub=" + url.QueryEscape(a.HubURL) + "&code=" + url.QueryEscape(code) +
+	link = "wga://enroll?hub=" + url.QueryEscape(a.HubURL) + "&code=" + url.QueryEscape(code) +
 		"&user=" + url.QueryEscape(user) + "&mode=" + mode
 	a.linksMu.Lock()
 	if a.links == nil {
@@ -184,17 +225,62 @@ func (a *Admin) enroll(w http.ResponseWriter, r *http.Request) {
 	}
 	a.links[id] = link // memory only: after a restart the page says to make a new code
 	a.linksMu.Unlock()
-	a.write(audit.Event{Time: now, Event: "enroll-code-issued", Requester: user, Detail: mode + " id " + id})
+	a.write(audit.Event{Time: now, Event: "enroll-code-issued", Requester: user, Detail: mode + " via " + via + " id " + id})
+	return id, link, nil
+}
+
+// enroll issues a code for a user (form: user, mode new|join) and sends the browser to its own page, which follows
+// it until a phone uses it. People who are not admins may only issue codes for themselves.
+func (a *Admin) enroll(w http.ResponseWriter, r *http.Request) {
+	user, mode := strings.ToLower(strings.TrimSpace(r.FormValue("user"))), r.FormValue("mode")
+	if !may(r, user) {
+		http.Error(w, "you may only enroll devices for yourself", http.StatusForbidden)
+		return
+	}
+	id, _, err := a.issue(user, mode, "ui")
+	if err != nil {
+		a.render(w, "index.html", a.overview(r, err.Error()))
+		return
+	}
 	http.Redirect(w, r, "/enroll/"+id, http.StatusSeeOther)
 }
 
-// enrollState fills in what the enroll page and its status box show for a code.
-func (a *Admin) enrollState(id string) (page, bool) {
+// appEnroll is phone sign-in: the app opens it in a private browser session, the person signs in, and the hub
+// answers with an enrollment link for them (wga://enroll?…), which the app catches. New user if they have no account
+// yet, otherwise a join that one of their existing phones must approve. In local mode (no sign-in) the user comes
+// from ?user=.
+//
+// It is a GET with an effect (a code is issued) so that it works as a sign-in redirect target. A forged visit
+// can only hand a code for the victim's own account to the victim's own app, and that code adds nothing until the
+// victim approves the device on a phone they already have.
+func (a *Admin) appEnroll(w http.ResponseWriter, r *http.Request) {
+	user := Who(r).User
+	if a.Auth.Local {
+		user = strings.ToLower(r.URL.Query().Get("user"))
+	}
+	if !protocol.ValidUserID(user) {
+		http.Error(w, "no usable user id", http.StatusBadRequest)
+		return
+	}
+	mode := ModeNew
+	if _, exists := a.Store.Chain(user); exists {
+		mode = ModeJoin
+	}
+	_, link, err := a.issue(user, mode, "app")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	http.Redirect(w, r, link, http.StatusSeeOther)
+}
+
+// enrollState fills in what the enroll page and its status box show for a code, if the signed-in person may see it.
+func (a *Admin) enrollState(r *http.Request, id string) (page, bool) {
 	s, ok := a.Store.EnrollStatus(id)
-	if !ok {
+	if !ok || !may(r, s.User) {
 		return page{}, false
 	}
-	p := page{Title: "Enroll a device", CodeID: id, Expiry: s.Expires, CodeUser: s.User, CodeMode: s.Mode}
+	p := page{Title: "Enroll a device", Me: Who(r), CodeID: id, Expiry: s.Expires, CodeUser: s.User, CodeMode: s.Mode}
 	if s.Device != "" {
 		if d, ok := a.Store.Device(s.Device); ok {
 			p.Enrolled = &d
@@ -216,7 +302,7 @@ func (a *Admin) enrollState(id string) (page, bool) {
 // reloads (the link must stay selectable); the status box does.
 func (a *Admin) enrollPage(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	p, ok := a.enrollState(id)
+	p, ok := a.enrollState(r, id)
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -244,7 +330,7 @@ func (a *Admin) enrollPage(w http.ResponseWriter, r *http.Request) {
 // enrollStatus is the enroll page's status box: it reloads itself every 3 s until the device is in its user's
 // roster (a join waits for approval on another of the user's phones) or the code expired.
 func (a *Admin) enrollStatus(w http.ResponseWriter, r *http.Request) {
-	p, ok := a.enrollState(r.PathValue("id"))
+	p, ok := a.enrollState(r, r.PathValue("id"))
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -261,6 +347,10 @@ func (a *Admin) forget(id string) {
 
 func (a *Admin) revoke(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if d, ok := a.Store.Device(id); !ok || !may(r, d.User) {
+		http.Error(w, "you may only revoke your own devices", http.StatusForbidden)
+		return
+	}
 	flash := "Revoked " + id + " at the hub: it gets nothing more from here. Adapters go by the user's roster: to take it off the " +
 		"account for good, remove it on another of the user's phones (Device tab → Devices on this account)."
 	if err := a.Store.RevokeDevice(id); err != nil {
@@ -268,7 +358,7 @@ func (a *Admin) revoke(w http.ResponseWriter, r *http.Request) {
 	} else {
 		a.write(audit.Event{Time: time.Now(), Event: "device-revoked", Device: id})
 	}
-	a.render(w, "index.html", a.overview(flash))
+	a.render(w, "index.html", a.overview(r, flash))
 }
 
 func (a *Admin) addAdapter(w http.ResponseWriter, r *http.Request) {
@@ -276,11 +366,11 @@ func (a *Admin) addAdapter(w http.ResponseWriter, r *http.Request) {
 	key := strings.TrimSpace(r.FormValue("key"))
 	tok, err := a.Store.AddAdapter(id, key, time.Now())
 	if err != nil {
-		a.render(w, "index.html", a.overview("Adding adapter: "+err.Error()))
+		a.render(w, "index.html", a.overview(r, "Adding adapter: "+err.Error()))
 		return
 	}
 	a.write(audit.Event{Time: time.Now(), Event: "adapter-added", Adapter: id, Detail: "key " + key})
-	p := a.overview("")
+	p := a.overview(r, "")
 	p.NewAdapter, p.NewToken = id, tok
 	a.render(w, "index.html", p)
 }
@@ -293,12 +383,12 @@ func (a *Admin) removeAdapter(w http.ResponseWriter, r *http.Request) {
 	} else {
 		a.write(audit.Event{Time: time.Now(), Event: "adapter-removed", Adapter: id})
 	}
-	a.render(w, "index.html", a.overview(flash))
+	a.render(w, "index.html", a.overview(r, flash))
 }
 
 // audit shows the last 200 lines of the hub's audit log.
-func (a *Admin) audit(w http.ResponseWriter, _ *http.Request) {
-	p := page{Title: "Hub audit"}
+func (a *Admin) audit(w http.ResponseWriter, r *http.Request) {
+	p := page{Title: "Hub audit", Me: Who(r)}
 	if f, err := os.Open(a.AuditPath); err == nil {
 		defer f.Close()
 		var lines []string
