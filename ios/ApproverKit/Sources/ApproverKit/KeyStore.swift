@@ -1,6 +1,18 @@
 import CryptoKit
+import CryptoTokenKit
 import Foundation
 import LocalAuthentication
+
+/// What the approve key's refusals mean to a person.
+public enum ApproveKeyError: Error, LocalizedError {
+    case wrongPIN
+
+    public var errorDescription: String? {
+        switch self {
+        case .wrongPIN: "Wrong app PIN. It is the PIN set when this device was connected, not the phone's passcode."
+        }
+    }
+}
 
 /// The device's three keys (docs/PROTOCOL.md "Keys"). Private keys never leave the store; callers get public keys,
 /// signatures and decrypted boxes.
@@ -142,7 +154,13 @@ public final class SecureEnclaveKeyStore: KeyStore, @unchecked Sendable {
     }
 
     public func signApprove(_ data: Data, pin: String?) throws -> Data {
-        let sig = try approveKey(pin: pin).signature(for: data).rawRepresentation
+        let sig: Data
+        do {
+            sig = try approveKey(pin: pin).signature(for: data).rawRepresentation
+        } catch let e as TKError where e.code == .corruptedData || e.code == .authenticationFailed {
+            // The app PIN is part of how the Secure Enclave opens the key: a wrong one reads as corrupted key data.
+            throw ApproveKeyError.wrongPIN
+        }
         // A typed PIN that worked is kept for Face ID: keys made before the stored PIN, or after Face ID re-enrollment
         // (which makes the stored copy unreadable).
         if let pin, !pin.isEmpty { try? savePIN(pin) }
