@@ -34,6 +34,12 @@ public struct HubClient: Sendable {
         _ = try await call("POST", "/v1/device/roster", body: try Coders.encoder.encode(RosterPost(roster: env)))
     }
 
+    /// Registers this device's APNs token (hex) with the hub; environment is "production" or "development".
+    public func registerPush(token: String, environment: String) async throws {
+        _ = try await call("POST", "/v1/device/push",
+                           body: try Coders.encoder.encode(["token": token, "environment": environment]))
+    }
+
     public func leave(_ l: LeavePost) async throws {
         _ = try await call("POST", "/v1/device/leave", body: try Coders.encoder.encode(l))
     }

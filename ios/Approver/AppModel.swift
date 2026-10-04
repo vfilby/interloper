@@ -1,6 +1,7 @@
 import ApproverKit
 import Foundation
 import SwiftUI
+import UserNotifications
 
 /// What became of a decision this device sent.
 enum Outcome: Equatable {
@@ -134,6 +135,34 @@ final class AppModel: ObservableObject {
     }
 
     private var pins: [String: Data] { Dictionary(uniqueKeysWithValues: adapters.map { ($0.id, $0.key) }) }
+
+    // MARK: push
+
+    @Published var pushError: String?
+
+    /// Asks once for permission to notify, then registers with APNs on every launch (Apple's advice: tokens change).
+    /// The token reaches the hub in registerPush.
+    func enablePush() async {
+        guard isEnrolled else { return }
+        let center = UNUserNotificationCenter.current()
+        let granted = (try? await center.requestAuthorization(options: [.alert, .sound, .badge])) ?? false
+        if granted { UIApplication.shared.registerForRemoteNotifications() }
+    }
+
+    func registerPush(_ token: String) async {
+        guard let client else { return }
+        #if DEBUG
+        let environment = "development"
+        #else
+        let environment = "production"
+        #endif
+        do {
+            try await client.registerPush(token: token, environment: environment)
+            pushError = nil
+        } catch {
+            pushError = "Push notifications: \(error.localizedDescription)"
+        }
+    }
 
     // MARK: enrollment
 
