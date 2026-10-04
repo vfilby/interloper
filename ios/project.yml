@@ -46,7 +46,9 @@ targets:
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
         NSLocalNetworkUsageDescription: The app talks to your Interloper server on the local network.
-        # ITSAppUsesNonExemptEncryption is deliberately not set: App Store Connect asks on upload (runbook).
+        NSCameraUsageDescription: The camera scans the enrollment QR code from your Interloper server.
+        # Only Apple's own encryption (CryptoKit, Security), which needs no export documentation (runbook).
+        ITSAppUsesNonExemptEncryption: false
         CFBundleURLTypes:
           - CFBundleURLName: com.eff3.interloper.enroll
             CFBundleURLSchemes: [wga]
