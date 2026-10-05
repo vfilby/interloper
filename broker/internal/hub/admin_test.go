@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"warpgate-approver/broker/internal/protocol"
-	"warpgate-approver/broker/internal/softdevice"
+	"github.com/vfilby/interloper/internal/protocol"
+	"github.com/vfilby/interloper/internal/softdevice"
 )
 
 func TestAdminCSRF(t *testing.T) {

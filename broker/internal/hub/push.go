@@ -6,8 +6,8 @@ import (
 	"regexp"
 	"time"
 
-	"warpgate-approver/broker/internal/apns"
-	"warpgate-approver/broker/internal/audit"
+	"github.com/vfilby/interloper/broker/internal/apns"
+	"github.com/vfilby/interloper/internal/audit"
 )
 
 // Pusher sends one wake-up to one device (apns.Client).

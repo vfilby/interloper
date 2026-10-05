@@ -3,8 +3,8 @@ import Foundation
 import XCTest
 @testable import ApproverKit
 
-/// Interop with the Go side through testdata/interop at the repository root (see
-/// broker/internal/protocol/interop_test.go for how the files are made).
+/// Interop with the Go side through internal/protocol/testdata/interop (see
+/// internal/protocol/interop_test.go for how the files are made).
 final class InteropTests: XCTestCase {
     struct GoSealed: Decodable {
         var deviceApproveRaw: String
@@ -29,7 +29,7 @@ final class InteropTests: XCTestCase {
         .deletingLastPathComponent() // ApproverKit
         .deletingLastPathComponent() // ios
         .deletingLastPathComponent() // repo root
-        .appendingPathComponent("testdata/interop")
+        .appendingPathComponent("internal/protocol/testdata/interop")
 
     func load<T: Decodable>(_ name: String) throws -> T {
         try Coders.decoder.decode(T.self, from: Data(contentsOf: Self.interopDir.appendingPathComponent(name)))
@@ -89,7 +89,7 @@ final class InteropTests: XCTestCase {
     /// TestSwiftDecision. Run after the Go side rewrote go-sealed.json: WGA_WRITE_FIXTURE=1 swift test.
     func testWriteSwiftDecision() throws {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["WGA_WRITE_FIXTURE"] == "1",
-                          "set WGA_WRITE_FIXTURE=1 to rewrite testdata/interop/swift-decision.json")
+                          "set WGA_WRITE_FIXTURE=1 to rewrite internal/protocol/testdata/interop/swift-decision.json")
         let (g, dev, pinned, listing) = try fixture()
         let opened = try dev.open(listing, pinned: pinned)
         // Made at the record's own time, so Go can judge it then, however old the fixture is.

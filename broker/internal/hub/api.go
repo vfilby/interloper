@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"warpgate-approver/broker/internal/apns"
-	"warpgate-approver/broker/internal/audit"
-	"warpgate-approver/broker/internal/protocol"
+	"github.com/vfilby/interloper/broker/internal/apns"
+	"github.com/vfilby/interloper/internal/audit"
+	"github.com/vfilby/interloper/internal/protocol"
 )
 
 // API serves adapters and devices (docs/PROTOCOL.md, "Hub HTTP API"). Tokens here are transport credentials only.
