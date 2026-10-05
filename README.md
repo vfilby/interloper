@@ -63,26 +63,8 @@ on every push and every pull request:
 | govulncheck | known vulnerabilities in dependencies and the Go standard library (informational, not required) |
 | **CI ok** | passes only if Go, Docker and ApproverKit passed: the one check branch protection requires |
 
-Open a pull request and turn on auto-merge; it merges once CI is green:
-
-```
-gh pr create --fill && gh pr merge --auto --squash --delete-branch
-```
-
-Enable auto-merge from your own account (as above), not from a workflow: a merge made by the workflow token does not
-start other workflows, so the TestFlight upload on `main` would not run.
-
-One-time repository settings (admin):
-
-```
-gh api -X PATCH repos/vfilby/interloper -F allow_auto_merge=true -F delete_branch_on_merge=true
-gh api -X PUT repos/vfilby/interloper/private-vulnerability-reporting    # SECURITY.md's reporting channel
-gh api -X PUT repos/vfilby/interloper/branches/main/protection --input - <<'EOF'
-{"required_status_checks": {"strict": false, "checks": [{"context": "CI ok"}]},
- "enforce_admins": false, "required_pull_request_reviews": null, "restrictions": null,
- "required_linear_history": true, "allow_force_pushes": false, "allow_deletions": false}
-EOF
-```
+Changes to `main` go through pull requests that merge automatically once **CI ok** passes. Repository settings and
+the pull request workflow: [docs/runbooks/github.md](docs/runbooks/github.md).
 
 ## Notes
 
