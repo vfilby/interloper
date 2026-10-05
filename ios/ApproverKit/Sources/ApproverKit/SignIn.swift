@@ -1,6 +1,6 @@
 import Foundation
 
-/// What an Interloper server says about itself at /app/hello, before anyone signs in.
+/// What an Interpose server says about itself at /app/hello, before anyone signs in.
 public struct ServerInfo: Codable, Equatable, Sendable {
     public var service: String
     public var version: Int
@@ -12,15 +12,15 @@ public struct ServerInfo: Codable, Equatable, Sendable {
     public var isLocal: Bool { signin == "local" }
 }
 
-/// Onboarding: find the Interloper server, then continue on it (sign in there) to get an enrollment link.
+/// Onboarding: find the Interpose server, then continue on it (sign in there) to get an enrollment link.
 public enum SignIn {
     public enum Failure: Error, LocalizedError, Equatable {
         case badAddress
-        case notInterloper(String)
+        case notInterpose(String)
         public var errorDescription: String? {
             switch self {
             case .badAddress: return "That is not a server address."
-            case .notInterloper(let why): return "No Interloper server there (\(why))."
+            case .notInterpose(let why): return "No Interpose server there (\(why))."
             }
         }
     }
@@ -48,10 +48,10 @@ public enum SignIn {
         req.timeoutInterval = 10
         let (data, resp) = try await session.data(for: req)
         guard let http = resp as? HTTPURLResponse, http.statusCode == 200 else {
-            throw Failure.notInterloper("HTTP \((resp as? HTTPURLResponse)?.statusCode ?? 0)")
+            throw Failure.notInterpose("HTTP \((resp as? HTTPURLResponse)?.statusCode ?? 0)")
         }
         guard let info = try? JSONDecoder().decode(ServerInfo.self, from: data), info.service == "interloper" else {
-            throw Failure.notInterloper("it does not answer like one")
+            throw Failure.notInterpose("it does not answer like one")
         }
         return info
     }

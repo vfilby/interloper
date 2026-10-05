@@ -10,7 +10,7 @@
 // Sign-in to the management UI (and phone sign-in) is OIDC, e.g. Authelia (docs/runbooks/oidc.md):
 //
 //	-oidc-issuer        https://sso.home.example
-//	-oidc-client-id     interloper
+//	-oidc-client-id     interpose
 //	-oidc-secret-file   file holding the client secret
 //	-oidc-redirect      https://<management UI host>/oidc/callback (registered at the provider)
 //	-oidc-admin-group   interpose_admins

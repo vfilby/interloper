@@ -1,4 +1,4 @@
-# Builds the Interloper iOS app and uploads it to TestFlight. Modelled on MigraLog's release pipeline
+# Builds the Interpose iOS app and uploads it to TestFlight. Modelled on MigraLog's release pipeline
 # (vfilby/migralog .github/workflows/release-pipeline.yml). One-time setup: docs/runbooks/testflight.md.
 #
 # Version: tags ios/v<major>.<minor>.<patch>. Each run takes the newest tag, bumps the patch, builds that version with
@@ -93,7 +93,7 @@ jobs:
         run: |
           xcodegen generate
           xcodebuild archive -project Approver.xcodeproj -scheme Approver -configuration Release \
-            -destination 'generic/platform=iOS' -archivePath build/Interloper.xcarchive \
+            -destination 'generic/platform=iOS' -archivePath build/Interpose.xcarchive \
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
             MARKETING_VERSION="${{ steps.version.outputs.version }}" \
             CURRENT_PROJECT_VERSION="${{ steps.version.outputs.build }}"
@@ -103,7 +103,7 @@ jobs:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
         run: |
-          xcodebuild -exportArchive -archivePath build/Interloper.xcarchive -exportOptionsPlist ExportOptions.plist \
+          xcodebuild -exportArchive -archivePath build/Interpose.xcarchive -exportOptionsPlist ExportOptions.plist \
             -exportPath build/export \
             -authenticationKeyPath "$HOME/.private_keys/AuthKey_${ASC_KEY_ID}.p8" \
             -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID"

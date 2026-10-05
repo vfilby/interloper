@@ -253,7 +253,7 @@ func (a *Admin) enroll(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/enroll/"+id, http.StatusSeeOther)
 }
 
-// appHello lets the app check, before anyone signs in, that an address is an Interloper server, and learn how to
+// appHello lets the app check, before anyone signs in, that an address is an Interpose server, and learn how to
 // continue: "oidc" (sign in on the server) or "local" (development: no sign-in; the app asks for a user id). Public,
 // and says nothing about anyone.
 func (a *Admin) appHello(w http.ResponseWriter, _ *http.Request) {
