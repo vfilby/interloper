@@ -1,7 +1,11 @@
-.PHONY: test ios-test e2e e2e-ui dist-adapter clean
+.PHONY: check test ios-test e2e e2e-ui build dist-adapter docker-hub clean
+
+# What CI runs on every push and pull request (.github/workflows/ci.yml), minus Docker.
+check: test e2e
+	@test -z "$$(gofmt -l .)" || { echo "gofmt needed:"; gofmt -l .; exit 1; }
 
 test:
-	cd broker && go vet ./... && go test -race -count=1 ./...
+	go vet ./... && go test -race -count=1 ./...
 
 ios-test:
 	cd ios/ApproverKit && swift test
@@ -12,10 +16,18 @@ e2e:
 e2e-ui:
 	scripts/e2e-ui.sh
 
-# The Warpgate adapter, for the Warpgate host (docs/runbooks/deploy-clearing-house.md).
+# Every command, for this machine, into bin/.
+build:
+	go build -o bin/ ./broker/cmd/... ./adapter/cmd/... ./adapters/warpgate/cmd/...
+
+# The Warpgate adapter, for the Warpgate host (adapters/warpgate/README.md).
 dist-adapter: test
-	cd broker && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags='-s -w' -o ../deploy/adapter/wga-adapter ./cmd/wga-adapter
-	@shasum -a 256 deploy/adapter/wga-adapter
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags='-s -w' -o adapters/warpgate/deploy/wga-adapter ./adapters/warpgate/cmd/wga-adapter
+	@shasum -a 256 adapters/warpgate/deploy/wga-adapter
+
+# The hub's container image (docs/docker.md).
+docker-hub:
+	docker build -f broker/Dockerfile -t interpose-hub:local .
 
 clean:
-	rm -f deploy/adapter/wga-adapter
+	rm -rf bin adapters/warpgate/deploy/wga-adapter

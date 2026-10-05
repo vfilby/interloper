@@ -1,0 +1,9 @@
+.git
+.github
+.claude
+ios
+bin
+hub-data
+adapter-data
+**/hub-data
+**/adapter-data

@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"warpgate-approver/broker/internal/apns"
-	"warpgate-approver/broker/internal/protocol"
-	"warpgate-approver/broker/internal/softdevice"
+	"github.com/vfilby/interloper/broker/internal/apns"
+	"github.com/vfilby/interloper/internal/protocol"
+	"github.com/vfilby/interloper/internal/softdevice"
 )
 
 type fakePusher struct {
