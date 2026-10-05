@@ -3,8 +3,9 @@
 # Runbook: docs/runbooks/deploy-clearing-house.md. Run it from the directory the deploy files were copied to:
 #   cd ~/adapter-staging && sudo ./install.sh
 #
-# First install: warpgate-token (the adapter's own Warpgate approver token; runbook step 2) must be here too. Every secret
-# found here is moved into place and the copy shredded. .env (your settings) is created once and never overwritten.
+# First install: warpgate-token (the adapter's own Warpgate approver token; runbook step 2) and .env (your settings:
+# `cp adapter.env.default .env`, then edit it) must be here too. Every secret found here is moved into place and the
+# copy shredded. An installed .env is never overwritten.
 # The adapter starts only when it has a hub token and trusts at least one account; until then this stops and says
 # what is missing.
 set -euo pipefail
@@ -37,10 +38,13 @@ install -d -m 0700 -o "$CUID" -g "$CUID" "$DEST/secrets" "$DEST/data"
 install -m 0644 -o root -g root "$HERE/Dockerfile" "$HERE/compose.yaml" "$DEST/"
 install -m 0755 -o root -g root "$HERE/wga-adapter" "$DEST/"
 if [ -f "$DEST/.env" ]; then
-  echo ".env: kept yours"
+  echo ".env: kept the installed one"
+elif [ -f "$HERE/.env" ]; then
+  install -m 0644 -o root -g root "$HERE/.env" "$DEST/.env"
+  echo ".env: installed yours"
 else
   install -m 0644 -o root -g root "$HERE/adapter.env.default" "$DEST/.env"
-  echo ".env: created from the defaults"
+  echo ".env: created from the defaults (no .env here)"
 fi
 if grep -q 'home\.example' "$DEST/.env"; then
   die "$DEST/.env still has placeholder host names (home.example): set HUB_URL and WARPGATE_URL, then run this again"

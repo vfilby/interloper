@@ -37,15 +37,17 @@ make dist-adapter        # runs the tests, then builds deploy/adapter/wga-adapte
 Copy `deploy/adapter/` (`install.sh`, `Dockerfile`, `compose.yaml`, `adapter.env.default`, `wga-adapter`) and the
 Warpgate token (as a file named `warpgate-token`) into one directory on the adapter host, e.g. `~/adapter-staging`.
 
-## 4. Install: first and second run
+## 4. Settings, then install
 
-On the adapter host:
+On the adapter host, **before** running the install, make the settings file and set `HUB_URL` (the hub's public URL)
+and `WARPGATE_URL`:
 ```
-cd ~/adapter-staging && sudo ./install.sh
+cd ~/adapter-staging
+cp adapter.env.default .env && vi .env
+sudo ./install.sh
 ```
-It asks you to confirm the sha256, installs into `/opt/interpose-adapter`, then stops: `.env` has placeholder host
-names. Set `HUB_URL` and `WARPGATE_URL` in `/opt/interpose-adapter/.env`, then run `sudo ./install.sh` again. It builds
-the image, prints the adapter's **public key** and **fingerprint**, and stops again: no hub token yet.
+It asks you to confirm the sha256 (compare with step 3), installs into `/opt/interpose-adapter`, builds the image,
+prints the adapter's **public key** and **fingerprint**, and stops: no hub token yet.
 
 ## 5. Register the adapter at the hub
 
@@ -61,7 +63,7 @@ On the phone: **Device** tab → the **account fingerprint**. Read it off the ph
 that lies about it would get an account of its own trusted. On the adapter host:
 ```
 cd /opt/interpose-adapter && sudo docker compose run --rm --no-deps adapter-warpgate trust add-user -dir /data <user> <account fingerprint>
-cd ~/adapter-staging && sudo ./install.sh     # third run: everything is in place, it starts the adapter
+cd ~/adapter-staging && sudo ./install.sh     # second run: everything is in place, it starts the adapter
 cd /opt/interpose-adapter && sudo docker compose logs -f
 ```
 On the phone: Device → **Check hub for new adapters**; the `warpgate` fingerprint must match step 4's. Then delete
