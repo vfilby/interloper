@@ -1,7 +1,9 @@
 #!/bin/bash
 # install.sh: install or update the Warpgate adapter in /opt/interpose-adapter, on the Warpgate host.
 # Runbook: docs/runbooks/deploy-clearing-house.md. Run it from the directory the deploy files were copied to:
-#   cd ~/adapter-staging && sudo ./install.sh
+#   cd ~/adapter-staging && sudo ./install.sh [sha256]
+# With the sha256 that `make dist-adapter` printed, the binary is checked against it without asking. A binary already
+# confirmed once is not asked about again.
 #
 # A guided install: it does everything it can, and where it needs you (a value from the hub's UI or the phone) it
 # says what to do, waits, and checks what you enter. Run it again any time: finished steps are skipped, so it is also
@@ -48,10 +50,19 @@ done
 command -v docker >/dev/null || fail "docker is not installed on this host"
 
 step "1/7 The adapter binary"
-echo "sha256: $(sha256sum "$HERE/wga-adapter" | cut -d' ' -f1)"
-confirm "Is that the same sha256 that 'make dist-adapter' printed where you built it?" ||
-  fail "binary not confirmed; nothing was changed. Copy the binary you built, then run this again."
-ok "binary confirmed"
+sum=$(sha256sum "$HERE/wga-adapter" | cut -d' ' -f1)
+want=$(printf '%s' "${1:-}" | tr 'A-F' 'a-f')
+if [ -n "$want" ]; then
+  [ "$sum" = "$want" ] || fail "the binary here has sha256 $sum, not the $want you gave: copy the binary you built"
+  ok "binary matches the sha256 given ($sum)"
+elif [ "$(cat "$DEST/.confirmed-sha256" 2>/dev/null)" = "$sum" ]; then
+  ok "same binary as confirmed before ($sum)"
+else
+  echo "sha256: $sum"
+  confirm "Is that the same sha256 that 'make dist-adapter' printed where you built it?" ||
+    fail "binary not confirmed; nothing was changed. Copy the binary you built, then run this again."
+  ok "binary confirmed"
+fi
 
 step "2/7 Settings (.env)"
 install -d -m 0755 -o root -g root "$DEST"
@@ -98,6 +109,7 @@ fi
 step "4/7 Install the files and build the image"
 install -m 0644 -o root -g root "$HERE/Dockerfile" "$HERE/compose.yaml" "$DEST/"
 install -m 0755 -o root -g root "$HERE/wga-adapter" "$DEST/"
+printf '%s\n' "$sum" > "$DEST/.confirmed-sha256"
 compose build --quiet
 ok "image built"
 
