@@ -177,7 +177,7 @@ type page struct {
 	Active   bool    // that device is in its user's roster (a join was approved; a new user is active at once)
 	Account  string  // the user's account fingerprint, once known
 	// adapter added
-	NewAdapter, NewToken string
+	NewAdapter, NewAdapterFP, NewToken string
 	// audit
 	Lines []string
 }
@@ -420,9 +420,13 @@ func (a *Admin) addAdapter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.write(audit.Event{Time: time.Now(), Event: "adapter-added", Adapter: id, Detail: "key " + key})
-	p := a.overview(r, "")
-	p.NewAdapter, p.NewToken = id, tok
-	a.render(w, "index.html", p)
+	// A page of its own, so the once-only token is the first thing on screen, not above the fold of the overview.
+	p := page{Title: "Adapter registered", Me: Who(r), NewAdapter: id, NewToken: tok}
+	if raw, err := protocol.UnB64(key); err == nil {
+		p.NewAdapterFP = protocol.Fingerprint(raw)
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	a.render(w, "adapter-added.html", p)
 }
 
 func (a *Admin) removeAdapter(w http.ResponseWriter, r *http.Request) {

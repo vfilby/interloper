@@ -1,0 +1,14 @@
+{{define "adapter-added.html"}}{{template "head" .}}
+<p>Adapter <strong class="mono">{{.NewAdapter}}</strong> is registered, with key fingerprint
+<strong class="mono">{{.NewAdapterFP}}</strong>. Check that this is the fingerprint the adapter printed.</p>
+
+<div class="secret">
+  <p style="margin-top: 0"><strong>Its hub token, shown once.</strong> Copy it now: the hub keeps only a hash, so it
+  cannot show it again. Click the token to select all of it.</p>
+  <p class="token">{{.NewToken}}</p>
+  <p style="margin-bottom: 0">Paste it where the adapter's install asks for it (or into the adapter's
+  <code>hub-token</code> file, mode 0400). If it is lost, remove the adapter below the overview and register it again.</p>
+</div>
+
+<p><a href="/#adapters">Done: back to the overview</a></p>
+{{template "foot" .}}{{end}}

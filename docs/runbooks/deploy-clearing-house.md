@@ -37,39 +37,27 @@ make dist-adapter        # runs the tests, then builds deploy/adapter/wga-adapte
 Copy `deploy/adapter/` (`install.sh`, `Dockerfile`, `compose.yaml`, `adapter.env.default`, `wga-adapter`) and the
 Warpgate token (as a file named `warpgate-token`) into one directory on the adapter host, e.g. `~/adapter-staging`.
 
-## 4. Settings, then install
+## 4. Run the guided install
 
-On the adapter host, **before** running the install, make the settings file and set `HUB_URL` (the hub's public URL)
-and `WARPGATE_URL`:
+On the adapter host, in the staging directory:
 ```
-cd ~/adapter-staging
-cp adapter.env.default .env && vi .env
-sudo ./install.sh
+cd ~/adapter-staging && sudo ./install.sh
 ```
-It asks you to confirm the sha256 (compare with step 3), installs into `/opt/interpose-adapter`, builds the image,
-prints the adapter's **public key** and **fingerprint**, and stops: no hub token yet.
+It runs start to finish and, where it needs you, shows a **YOUR TURN** box, waits, and checks what you enter:
+1. confirm the binary's sha256 (compare with step 3);
+2. the hub's public URL and Warpgate's URL, if `.env` does not have them yet;
+3. the Warpgate token, if you did not copy it over as `warpgate-token`;
+4. registering the adapter: it shows the **public** key to paste into the hub's management UI (**Adapters**, id
+   `warpgate`), then asks for the token the hub shows once;
+5. the account to trust: user id and **account fingerprint, read off a phone on the account** (Device tab), never off
+   the hub's page, since a hub that lies about it would get an account of its own trusted;
+6. it starts the adapter, waits for it to report `started`, and shows the adapter fingerprint to compare on the phone
+   (Device → **Check hub for new adapters**).
 
-## 5. Register the adapter at the hub
+Running it again is safe and is also how you update: finished steps are skipped. Only real problems stop it, marked
+`ERROR`.
 
-In the hub's management UI, as an admin: **Adapters** → id `warpgate`, the public key from step 4. The token is shown
-once. On the adapter host:
-```
-printf '%s\n' '<token>' | sudo install -m 0400 -o 65533 -g 65533 /dev/stdin /opt/interpose-adapter/data/hub-token
-```
-
-## 6. Trust your account, then start
-
-On the phone: **Device** tab → the **account fingerprint**. Read it off the phone, never off the hub's page: a hub
-that lies about it would get an account of its own trusted. On the adapter host:
-```
-cd /opt/interpose-adapter && sudo docker compose run --rm --no-deps adapter-warpgate trust add-user -dir /data <user> <account fingerprint>
-cd ~/adapter-staging && sudo ./install.sh     # second run: everything is in place, it starts the adapter
-cd /opt/interpose-adapter && sudo docker compose logs -f
-```
-On the phone: Device → **Check hub for new adapters**; the `warpgate` fingerprint must match step 4's. Then delete
-the staging directory (install.sh has already shredded the token copy).
-
-## 7. Check end to end
+## 5. Check end to end
 
 File a Warpgate ticket request. Within seconds the phone gets a push ("Approval request") and the request shows
 Warpgate's facts. Approve with Face ID; the ticket is approved in Warpgate, and the adapter log shows it.
@@ -77,4 +65,4 @@ Warpgate's facts. Approve with Face ID; the ticket is approved in Warpgate, and 
 ## Updating
 
 - **Hub:** rebuild from the new commit and restart it; its state directory carries over.
-- **Adapter:** steps 3 and 4 again. Key, hub token and trust list stay in `/opt/interpose-adapter`.
+- **Adapter:** steps 3 and 4 again; the install skips what is already set up (key, hub token, trust list).
