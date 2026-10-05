@@ -160,7 +160,7 @@ func hubWithIdP(t *testing.T) (*fakeIdP, *httptest.Server, *Store, func() *http.
 	ui := httptest.NewUnstartedServer(nil)
 	ui.Start()
 	t.Cleanup(ui.Close)
-	auth, err := NewOIDC(context.Background(), idp.srv.URL, idp.client, idp.secret, ui.URL+"/oidc/callback", "interloper_admins",
+	auth, err := NewOIDC(context.Background(), idp.srv.URL, idp.client, idp.secret, ui.URL+"/oidc/callback", "interpose_admins",
 		[]byte(strings.Repeat("k", 32)))
 	if err != nil {
 		t.Fatal(err)
@@ -276,7 +276,7 @@ func TestOIDCSelfServiceAndAdmin(t *testing.T) {
 	}
 
 	// vince: an admin by group.
-	idp.as("vince", "interloper_admins")
+	idp.as("vince", "interpose_admins")
 	vince := browser()
 	page = signIn(t, vince, ui.URL)
 	if !strings.Contains(page, "(admin)") || !strings.Contains(page, "Register an adapter") {
@@ -364,7 +364,7 @@ func TestOIDCAttacks(t *testing.T) {
 func TestOIDCUserinfoFallback(t *testing.T) {
 	idp, ui, _, browser := hubWithIdP(t)
 	idp.minimal = true
-	idp.as("vince", "interloper_admins")
+	idp.as("vince", "interpose_admins")
 	page := signIn(t, browser(), ui.URL)
 	if !strings.Contains(page, "Signed in as <strong>vince</strong> (admin)") {
 		t.Fatal("userinfo fallback did not supply the username and groups")

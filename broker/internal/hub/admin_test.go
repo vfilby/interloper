@@ -30,7 +30,7 @@ func TestAdminCSRF(t *testing.T) {
 		// What browsers really send for the UI's own form posts.
 		{"browser same-origin, Origin null", map[string]string{"Sec-Fetch-Site": "same-origin", "Origin": "null"}, http.StatusSeeOther},
 		{"browser same-origin", map[string]string{"Sec-Fetch-Site": "same-origin", "Origin": "http://127.0.0.1:8741"}, http.StatusSeeOther},
-		{"behind a proxy (Host differs)", map[string]string{"Sec-Fetch-Site": "same-origin", "Origin": "https://approvals.home.example"}, http.StatusSeeOther},
+		{"behind a proxy (Host differs)", map[string]string{"Sec-Fetch-Site": "same-origin", "Origin": "https://interpose-hub.home.example"}, http.StatusSeeOther},
 		{"curl", nil, http.StatusSeeOther},
 		{"old browser, matching Origin", map[string]string{"Origin": "http://127.0.0.1:8741"}, http.StatusSeeOther},
 		// Attacks.

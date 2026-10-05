@@ -32,7 +32,7 @@ Or open `Approver.xcodeproj` in Xcode and run. A device build needs a signing te
 The app opens on **Connect to Interloper**. There are three steps:
 
 1. **Interloper server:** enter the address of your server, the page you manage it from (for example
-   `approvals.home.example`). The app checks it really is one (`/app/hello`) before going on.
+   `interpose-hub.home.example`). The app checks it really is one (`/app/hello`) before going on.
 2. **Continue on the server:** the app opens the server in a private browser session. You sign in there
    (Authelia, two-factor), and the server registers the device for you. The first time that is a new account;
    otherwise the device joins your account and waits for approval on a phone you already have.

@@ -1,15 +1,15 @@
-# /opt/interloper-adapter on bastion: the Warpgate adapter of the Interloper clearing house, beside Warpgate.
+# /opt/interpose-adapter on bastion: the Warpgate adapter of the Interloper clearing house, beside Warpgate.
 # Its own compose project, apart from Warpgate and the phase-1 broker; restarting it touches neither.
 #
 # It holds what can act: the Warpgate token (approve/deny ticket requests) and the trust list (which accounts' phones
 # may decide). It only connects out: to the hub (HUB_URL) and to Warpgate's API. Settings: .env (install.sh creates
 # it once from adapter.env.default and never overwrites it).
-name: interloper-adapter
+name: interpose-adapter
 
 services:
   adapter-warpgate:
     build: .
-    image: interloper-adapter:local
+    image: interpose-adapter:local
     restart: unless-stopped
     user: "65533:65533" # not the phase-1 broker's 65532
     read_only: true

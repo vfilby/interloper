@@ -6,7 +6,7 @@ yet.**
 
 What sign-in decides, and what it does not:
 - **It decides** who may hand out enrollment codes and see what.
-  - Members of `interloper_admins` see everything, register adapters and read the audit log.
+  - Members of `interpose_admins` see everything, register adapters and read the audit log.
   - Everyone else sees only their own account: they can create it (their first phone), add phones to it, and revoke
     their own phones at the hub.
 - **It does not decide** which phones can approve. That is each user's roster, signed by their own phones
@@ -18,21 +18,21 @@ What sign-in decides, and what it does not:
 ## 1. LLDAP groups
 
 Create, then add people to them:
-- `interloper_users`: may sign in to the hub;
-- `interloper_admins`: may sign in and is a hub admin.
+- `interpose_users`: may sign in to the hub;
+- `interpose_admins`: may sign in and is a hub admin.
 
 ## 2. Authelia (`DockerStacks/reverse-proxy/config/authelia/configuration.yml`)
 
 Under `identity_providers.oidc.authorization_policies`:
 
 ```yaml
-      bastion:
+      interpose:
         default_policy: deny
         rules:
           - policy: two_factor
             subject:
-              - 'group:interloper_users'
-              - 'group:interloper_admins'
+              - 'group:interpose_users'
+              - 'group:interpose_admins'
 ```
 
 Under `identity_providers.oidc.claims_policies`. This puts the username and groups in the ID token, which Authelia
@@ -41,33 +41,33 @@ better:
 
 ```yaml
     claims_policies:
-      bastion:
+      interpose:
         id_token: ['preferred_username', 'groups', 'name']
 ```
 
 Under `identity_providers.oidc.clients`, modelled on the Mealie client:
 
 ```yaml
-      - client_id: bastion
-        client_name: Interloper approvals
-        client_secret: '{{ env "AUTHELIA_OIDC_CLIENT_SECRET_INTERLOPER" }}'
+      - client_id: interpose
+        client_name: Interpose Hub
+        client_secret: '{{ env "AUTHELIA_OIDC_CLIENT_SECRET_INTERPOSE" }}'
         consent_mode: implicit
         require_pkce: true
         pkce_challenge_method: S256
         token_endpoint_auth_method: client_secret_basic
-        claims_policy: bastion
+        claims_policy: interpose
         redirect_uris:
-          - https://approvals.home.example/oidc/callback
+          - https://interpose-hub.home.example/oidc/callback
         scopes: ['openid', 'profile', 'email', 'groups']
-        authorization_policy: bastion
+        authorization_policy: interpose
 ```
 
-Put the secret in the reverse-proxy `.env` as `AUTHELIA_OIDC_CLIENT_SECRET_INTERLOPER`, in the same form as the
+Put the secret in the reverse-proxy `.env` as `AUTHELIA_OIDC_CLIENT_SECRET_INTERPOSE`, in the same form as the
 other clients' secrets, and pass it through in `reverse-proxy/compose.yaml` like the others. Restart Authelia.
 
 ## 3. The hub
 
-The management UI needs a stable https name: `approvals.home.example` is assumed above, routed by Traefik to the hub's
+The management UI needs a stable https name: `interpose-hub.home.example` is assumed above, routed by Traefik to the hub's
 `-admin` listener. Do **not** put Authelia forward-auth in front of it as well: the hub signs people in itself, and
 `/oidc/callback` must reach it.
 
@@ -78,8 +78,8 @@ wga-hub \
   -oidc-issuer https://sso.home.example \
   -oidc-client-id bastion \
   -oidc-secret-file /run/secrets/oidc-client-secret \
-  -oidc-redirect https://approvals.home.example/oidc/callback \
-  -oidc-admin-group interloper_admins
+  -oidc-redirect https://interpose-hub.home.example/oidc/callback \
+  -oidc-admin-group interpose_admins
 ```
 
 - **Session cookies** are signed with `<state>/session.key`, made on first start. Delete it to sign everyone out.
@@ -89,7 +89,7 @@ wga-hub \
 
 ## 4. Phones
 
-- In the app's Enroll screen, under **Sign in**, enter `https://approvals.home.example`, then tap *Sign in to get a
+- In the app's Enroll screen, under **Sign in**, enter `https://interpose-hub.home.example`, then tap *Sign in to get a
   code*. Authelia (two-factor) opens in a private browser session.
 - The hub sends the app back a code for you: a **new account** the first time, otherwise **another device**. Approve
   that device on one of your existing phones.

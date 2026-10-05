@@ -13,7 +13,7 @@
 //	-oidc-client-id     bastion
 //	-oidc-secret-file   file holding the client secret
 //	-oidc-redirect      https://<management UI host>/oidc/callback (registered at the provider)
-//	-oidc-admin-group   interloper_admins
+//	-oidc-admin-group   interpose_admins
 //	-session-key-file   32+ random bytes signing session cookies (made on first start if missing)
 //
 // Without -oidc-issuer there is no sign-in at all (everyone is an admin): the hub then refuses to start unless the
@@ -54,10 +54,10 @@ func main() {
 	flag.StringVar(&c.hubURL, "url", "http://127.0.0.1:8740", "API base URL as devices reach it")
 	flag.StringVar(&c.stateDir, "state", "hub-data", "state directory")
 	flag.StringVar(&c.issuer, "oidc-issuer", "", "OIDC issuer URL; empty: no sign-in (loopback only)")
-	flag.StringVar(&c.clientID, "oidc-client-id", "interloper", "OIDC client id")
+	flag.StringVar(&c.clientID, "oidc-client-id", "interpose", "OIDC client id")
 	flag.StringVar(&c.secretFile, "oidc-secret-file", "", "file holding the OIDC client secret")
 	flag.StringVar(&c.redirect, "oidc-redirect", "", "OIDC redirect URL: https://<management UI host>/oidc/callback")
-	flag.StringVar(&c.adminGroup, "oidc-admin-group", "interloper_admins", "group whose members are admins")
+	flag.StringVar(&c.adminGroup, "oidc-admin-group", "interpose_admins", "group whose members are admins")
 	flag.StringVar(&c.keyFile, "session-key-file", "", "session signing key file (default <state>/session.key)")
 	flag.StringVar(&c.apnsKeyFile, "apns-key-file", "", "APNs auth key (.p8); empty: no push notifications")
 	flag.StringVar(&c.apnsKeyID, "apns-key-id", "", "the APNs key's Key ID")

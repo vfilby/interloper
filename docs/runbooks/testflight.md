@@ -103,7 +103,7 @@ This is not legal advice.
 ## Using a TestFlight build
 
 - **Reaching the server:** the phone must reach your Interloper server. Use its https address (e.g.
-  `approvals.home.example`) on the LAN or VPN. A development hub on a Mac works over http on the local network
+  `interpose-hub.home.example`) on the LAN or VPN. A development hub on a Mac works over http on the local network
   (`http://<mac>.local:8741`).
 - **Keys:** a TestFlight build uses the **Secure Enclave**: Face ID (current enrollment) or the app PIN set when
   connecting. Nothing is software-keyed as in the simulator. Hardware-only paths to watch:

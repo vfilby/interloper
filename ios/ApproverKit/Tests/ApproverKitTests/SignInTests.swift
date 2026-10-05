@@ -3,10 +3,10 @@ import XCTest
 
 final class SignInTests: XCTestCase {
     func testBase() {
-        XCTAssertEqual(SignIn.base("approvals.home.example")?.absoluteString, "https://approvals.home.example")
-        XCTAssertEqual(SignIn.base(" https://approvals.home.example/some/path?x=1 ")?.absoluteString, "https://approvals.home.example")
+        XCTAssertEqual(SignIn.base("interpose-hub.home.example")?.absoluteString, "https://interpose-hub.home.example")
+        XCTAssertEqual(SignIn.base(" https://interpose-hub.home.example/some/path?x=1 ")?.absoluteString, "https://interpose-hub.home.example")
         XCTAssertEqual(SignIn.base("http://127.0.0.1:18741")?.absoluteString, "http://127.0.0.1:18741")
-        XCTAssertEqual(SignIn.base("HTTPS://user:pw@approvals.home.example")?.absoluteString, "https://approvals.home.example")
+        XCTAssertEqual(SignIn.base("HTTPS://user:pw@interpose-hub.home.example")?.absoluteString, "https://interpose-hub.home.example")
         XCTAssertNil(SignIn.base(""))
         XCTAssertNil(SignIn.base("wga://enroll?code=x"))
         XCTAssertNil(SignIn.base("javascript:alert(1)"))
@@ -14,8 +14,8 @@ final class SignInTests: XCTestCase {
     }
 
     func testEnrollURL() {
-        let base = SignIn.base("https://approvals.home.example")!
-        XCTAssertEqual(SignIn.enrollURL(base).absoluteString, "https://approvals.home.example/app/enroll")
+        let base = SignIn.base("https://interpose-hub.home.example")!
+        XCTAssertEqual(SignIn.enrollURL(base).absoluteString, "https://interpose-hub.home.example/app/enroll")
         XCTAssertEqual(SignIn.enrollURL(SignIn.base("http://127.0.0.1:18741")!, user: "Vince").absoluteString,
                        "http://127.0.0.1:18741/app/enroll?user=vince")
     }
