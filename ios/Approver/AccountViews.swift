@@ -103,11 +103,12 @@ struct AccountSection: View {
 
     var body: some View {
         Section {
-            LabeledContent("Account", value: model.user ?? "—")
+            LabeledContent("User id", value: model.user ?? "—")
             if let a = model.account {
-                VStack(alignment: .leading) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text("Account fingerprint").font(.footnote).foregroundStyle(.secondary)
-                    Text(a).font(.footnote.monospaced().weight(.semibold))
+                    Text(a).font(.body.monospaced().weight(.semibold))
+                        .textSelection(.enabled) // long-press to copy
                 }
             } else {
                 Text("Not confirmed yet (waiting for approval).").foregroundStyle(.orange)
@@ -115,7 +116,7 @@ struct AccountSection: View {
         } header: {
             Text("Account")
         } footer: {
-            Text("Adapters trust this account by its fingerprint (`wga-adapter trust add-user`), and through it every device on the account.")
+            Text("Give an adapter this user id and account fingerprint (8 groups of 4) to trust the account: `trust add-user <user id> <account fingerprint>`. It then trusts every device on the account.")
         }
 
         Section {
