@@ -142,8 +142,9 @@ if [ -n "$trusted" ]; then
 fi
 if [ -z "$trusted" ]; then
   yourturn "trust your account" \
-    "On a phone that is on the account: Interloper → Device tab." \
-    "Enter the user id and the ACCOUNT fingerprint shown there (8 groups of 4)." \
+    "On a phone that is on the account: Interloper → Device tab → the Account section (not the Device section)." \
+    "Enter the user id (next to Account) and the Account fingerprint: 8 groups of 4, xxxx-xxxx-...-xxxx." \
+    "(The 4-group fingerprint at the top of the tab is the device's, not the account's.)" \
     "Read them off the phone, never off the hub's page: a lying hub would get its own account trusted."
   ask user "User id:             " '^[a-z0-9._-]{1,40}$'
   ask afp  "Account fingerprint: " '^[0-9a-f]{4}(-[0-9a-f]{4}){7}$'
