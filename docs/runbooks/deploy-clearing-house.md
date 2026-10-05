@@ -48,7 +48,8 @@ Given the sha256, it checks the binary without asking (without it, it asks once 
 2. the Warpgate token, if you did not copy it over as `warpgate-token`;
 3. registering the adapter: it shows the **public** key to paste into the hub's management UI (**Adapters**, id
    `warpgate`), then asks for the token the hub shows once;
-4. the account to trust: user id and **account fingerprint, read off a phone on the account** (Device tab), never off
+4. the account to trust: user id and **account fingerprint, read off a phone on the account** (Device tab → the
+   **Account** section → "Account fingerprint", 8 groups of 4; the 4-group one above it is the device's), never off
    the hub's page, since a hub that lies about it would get an account of its own trusted;
 5. it starts the adapter, waits for it to report `started`, and shows the adapter fingerprint to compare on the phone
    (Device → **Check hub for new adapters**).
