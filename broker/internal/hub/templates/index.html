@@ -20,14 +20,14 @@
 
 <h2 id="users">{{if .Me.Admin}}Users{{else}}Your account{{end}}</h2>
 <p class="muted">A user's devices are whatever their signed roster says. Only one of the user's own phones can add or remove a
-device (Face ID); this page can only hand out codes. Adapters trust users: <code>wga-adapter trust add-user &lt;user&gt;
+device (Face ID); this page can only hand out codes. Adapters trust users: <code>interpose-adapter trust add-user &lt;user&gt;
 &lt;account fingerprint&gt;</code>.</p>
 {{range .Users}}
 <div style="border: 1px solid #8884; border-radius: 6px; padding: .6rem .9rem; margin: .8rem 0">
   <div><strong style="font-size: 1.1rem">{{.ID}}</strong>
     <span class="muted">· roster v{{.Head.Roster.Seq}}</span></div>
   <div>Account fingerprint: <span class="mono" style="font-weight: 600">{{.Head.Account}}</span></div>
-  <pre class="mono" style="white-space: pre-wrap; padding: .4rem .6rem; background: #8881; margin: .4rem 0">wga-adapter trust add-user -dir &lt;adapter dir&gt; {{.ID}} {{.Head.Account}}</pre>
+  <pre class="mono" style="white-space: pre-wrap; padding: .4rem .6rem; background: #8881; margin: .4rem 0">interpose-adapter trust add-user -dir &lt;adapter dir&gt; {{.ID}} {{.Head.Account}}</pre>
   <table>
     <tr><th>Device</th><th>Fingerprint</th></tr>
     {{range $id, $c := .Head.Devices}}<tr><td>{{$c.Name}}</td><td class="mono">{{fp $c.ApproveKey}}</td></tr>{{end}}
@@ -105,7 +105,7 @@ the user's phones: adapters follow the roster, not this table.</p>
 <details style="margin-top:1rem"><summary>Register an adapter</summary>
 <form method="post" action="/adapters">
   <p><label>Id <input type="text" name="id" placeholder="warpgate"></label></p>
-  <p><label>Public key (from <code>wga-adapter key</code>) <input type="text" name="key"></label></p>
+  <p><label>Public key (from <code>interpose-adapter key</code>) <input type="text" name="key"></label></p>
   <p><button>Register</button></p>
 </form>
 </details>

@@ -7,7 +7,7 @@
 # there by hand is lost.
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-S=$(mktemp -d "${TMPDIR:-/tmp}/wga-e2e.XXXXXX")
+S=$(mktemp -d "${TMPDIR:-/tmp}/interpose-e2e.XXXXXX")
 B="$S/bin"
 (cd "$ROOT" && go build -o "$B/" ./broker/cmd/... ./adapter/cmd/...)
 cd "$S"
@@ -20,30 +20,30 @@ DEST=${DEST:-"platform=iOS Simulator,name=iPhone 17 Pro,OS=26.4"}
 (cd "$IOS" && xcodegen generate -q && xcodebuild -project Approver.xcodeproj -scheme Approver -destination "$DEST" \
   -derivedDataPath build build-for-testing CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual -quiet)
 
-"$B/wga-hub" -state hub-data -api 127.0.0.1:18740 -admin 127.0.0.1:18741 -url http://127.0.0.1:18740 > hub.log 2>&1 &
+"$B/interpose-hub" -state hub-data -api 127.0.0.1:18740 -admin 127.0.0.1:18741 -url http://127.0.0.1:18740 > hub.log 2>&1 &
 HUB=$!
 trap 'kill $HUB ${AD:-} ${XT:-} 2>/dev/null || true' EXIT
 sleep 1
 curl -sf localhost:18740/healthz >/dev/null || { echo "test hub did not start:"; cat hub.log; exit 1; }
-"$B/wga-adapter-demo" key -dir ad > key.txt
+"$B/interpose-adapter-demo" key -dir ad > key.txt
 PUB=$(awk '/public key/ {print $3}' key.txt)
 curl -sf -X POST localhost:18741/adapters -H 'Sec-Fetch-Site: same-origin' --data-urlencode id=demo --data-urlencode "key=$PUB" \
   | sed -n -E 's/.*<p class="token">([^<]+)<\/p>.*/\1/p' > ad/hub-token
-"$B/wga-adapter-demo" run -id demo -dir ad -hub http://127.0.0.1:18740 -poll 500ms -demo-listen 127.0.0.1:18749 > adapter.log 2>&1 &
+"$B/interpose-adapter-demo" run -id demo -dir ad -hub http://127.0.0.1:18740 -poll 500ms -demo-listen 127.0.0.1:18749 > adapter.log 2>&1 &
 AD=$!
 sleep 1
 curl -sf localhost:18749/requests -d '{"requester":"claude","title":"claude wants RW on db-01","risk":"elevated","reason":"fix the backups","facts":[{"label":"Host","value":"db-01"},{"label":"Access","value":"RW","level":"warn"},{"label":"Duration","value":"2h"}]}' >/dev/null
 curl -sf localhost:18749/requests -d '{"requester":"helper","title":"helper wants ADMIN on web-02","risk":"high","reason":"rotate certs ‮(bidi trick)","facts":[{"label":"Host","value":"web-02"},{"label":"Access","value":"ADMIN","level":"danger"}],"on_behalf_of":{"principal":"slack:U0123","display":"Kim","attested_by":"chatbot@agent-host"}}' >/dev/null
 
 newlink() { curl -sfL localhost:18741/enroll -H 'Sec-Fetch-Site: same-origin' --data-urlencode "user=$1" --data-urlencode "mode=$2" \
-  | grep -o 'wga://enroll[^<"'"'"']*' | head -1 | sed 's/&amp;/\&/g'; }
+  | grep -o 'interpose://enroll[^<"'"'"']*' | head -1 | sed 's/&amp;/\&/g'; }
 # The simulator becomes vince's first phone through phone sign-in (local mode: /app/enroll?user=vince); the test asks
 # the management UI for a join code itself later.
 xcrun simctl uninstall booted com.eff3.interloper 2>/dev/null || true
 xcrun simctl keychain booted reset  # the simulator keychain outlives an uninstall: start unenrolled
 
 echo "== starting UI test"
-( cd "$IOS" && TEST_RUNNER_WGA_ADMIN_URL="http://127.0.0.1:18741" xcodebuild -project Approver.xcodeproj -scheme Approver \
+( cd "$IOS" && TEST_RUNNER_INTERPOSE_ADMIN_URL="http://127.0.0.1:18741" xcodebuild -project Approver.xcodeproj -scheme Approver \
     -destination "$DEST" -derivedDataPath build \
     -resultBundlePath "$S/ui.xcresult" test-without-building CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual > "$S/xcodebuild.log" 2>&1 ) &
 XT=$!
@@ -61,7 +61,7 @@ for i in $(seq 1 120); do
   sleep 1
 done
 [ -n "$ACCOUNT" ] || { echo "app never enrolled"; tail -30 xcodebuild.log; exit 1; }
-"$B/wga-adapter-demo" trust add-user -dir ad vince "$ACCOUNT"
+"$B/interpose-adapter-demo" trust add-user -dir ad vince "$ACCOUNT"
 
 wait $XT && echo "UI TEST PASSED" || { echo "UI TEST FAILED"; grep -E "error|fail|XCT" xcodebuild.log | head -30; }
 echo "== service-side outcome"

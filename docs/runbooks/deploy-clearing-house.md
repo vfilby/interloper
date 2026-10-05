@@ -1,7 +1,7 @@
 # Deploying the clearing house: a hub, and an adapter beside each service
 
 Where things run, and why:
-- **The hub** (`wga-hub`) runs behind your reverse proxy, which terminates TLS, and signs people in with your OIDC
+- **The hub** (`interpose-hub`) runs behind your reverse proxy, which terminates TLS, and signs people in with your OIDC
   provider (`oidc.md`). It holds nothing that can act, so it can sit apart from the services it serves.
 - **Each adapter** runs **beside the service it guards**, e.g. the Warpgate adapter on the Warpgate host. It holds that
   service's credential and its own trust list. Owning that host already owns the service, so keeping them there adds
@@ -11,7 +11,7 @@ Host names below are placeholders (`hub.home.example`, `warpgate.home.example`, 
 
 ## 1. The hub
 
-Run `wga-hub` (`broker/cmd/wga-hub`, [broker/README.md](../../broker/README.md)) in a container
+Run `interpose-hub` (`broker/cmd/interpose-hub`, [broker/README.md](../../broker/README.md)) in a container
 ([docs/docker.md](../docker.md)) or as a binary. It needs:
 - **a state directory** (`-state`), writable, private to the hub;
 - **the reverse proxy** sending `/v1/*` and `/healthz` to the API listener (`-api`, default `:8740`) and everything

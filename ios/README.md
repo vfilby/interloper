@@ -47,8 +47,8 @@ In the simulator against a local hub (no OIDC):
 - Use `http://127.0.0.1:8741` as the server (the simulator shares the Mac's loopback).
 - Or run the `xcrun simctl openurl booted '…'` command the management page shows, then click Open.
 
-Then tell each adapter to trust the account (`wga-adapter trust add-user vince <account fingerprint>`), and requests
-show up in the inbox.
+Then tell each adapter to trust the account (`interpose-adapter trust add-user vince <account fingerprint>`), and
+requests show up in the inbox.
 
 ## Accounts (rosters)
 
@@ -89,8 +89,9 @@ Adapter pins are public keys, kept in UserDefaults.
 
 `scripts/e2e-ui.sh` (repository root) runs a real hub and the demo adapter on loopback. It then runs
 `ApproverUITests` in the simulator:
-1. The app enrolls from the link (`mode=new`), through the `-wgaAutoEnroll` launch argument (simulator Debug builds
-   only). The script does the admin step: it trusts the new account at the adapter (`wga-adapter trust add-user`).
+1. The app enrolls from the link (`mode=new`), through the `-interposeAutoEnroll` launch argument (simulator Debug
+   builds only). The script does the admin step: it trusts the new account at the adapter (`interpose-adapter trust
+   add-user`).
 2. The test opens a normal-risk request, taps Approve, and waits for the adapter's verified ack.
 3. It opens a high-risk request and checks that a tap does **not** approve it, then that a long press does.
 
@@ -101,7 +102,7 @@ device instead of the app.
 
 | Action | What it does | Adapters |
 |---|---|---|
-| **Enroll with another hub…** (or open a `wga://enroll` link while enrolled) | Enrolls with the new hub first, and forgets the old hub (and the account, if the link is for another user or a new account) only once that succeeds. Works for the same hub too, e.g. after its state was reset. | Keys are kept |
+| **Enroll with another hub…** (or open an `interpose://enroll` link while enrolled) | Enrolls with the new hub first, and forgets the old hub (and the account, if the link is for another user or a new account) only once that succeeds. Works for the same hub too, e.g. after its state was reset. | Keys are kept |
 | **Leave this hub** | Forgets the hub, its token, adapter pins, the account and requests. Keys are kept. | To stop the device, remove it from the account on another device |
 | **Reset device** | Leave the hub, and delete the keys | New keys must join the account again; remove the old device from the account first |
 
@@ -135,7 +136,7 @@ Enroll with another hub. A new code from the same hub re-enrolls the same keys.
   notifications, with a lock-screen Deny action (signed with the deny key).
 - **App Attest** assertion at enrollment.
 - **Off-network transport.** Only the direct path is implemented: the hub's HTTP API on LAN/VPN.
-- An in-app **QR scanner**. The Camera app opening the `wga://` link covers enrollment for now.
+- An in-app **QR scanner**. The Camera app opening the `interpose://` link covers enrollment for now.
 - **Untested on hardware:** Secure Enclave key creation with `.applicationPassword` and the PIN path. The simulator
   only exercises software keys.
 - Device-side revocation handling and key rotation; Apple Watch approve.

@@ -149,7 +149,7 @@ func (p *fakeIdP) idToken(nonce string) string {
 	return s
 }
 
-// hubWithIdP is a management UI behind OIDC, and a browser-like client (cookies; stops at wga:// links).
+// hubWithIdP is a management UI behind OIDC, and a browser-like client (cookies; stops at interpose:// links).
 func hubWithIdP(t *testing.T) (*fakeIdP, *httptest.Server, *Store, func() *http.Client) {
 	idp := newIdP(t)
 	st, err := Open(filepath.Join(t.TempDir(), "state.json"))
@@ -170,7 +170,7 @@ func hubWithIdP(t *testing.T) (*fakeIdP, *httptest.Server, *Store, func() *http.
 	browser := func() *http.Client {
 		jar, _ := cookiejar.New(nil)
 		return &http.Client{Jar: jar, CheckRedirect: func(req *http.Request, _ []*http.Request) error {
-			if req.URL.Scheme == "wga" {
+			if req.URL.Scheme == "interpose" {
 				return http.ErrUseLastResponse
 			}
 			return nil
@@ -268,10 +268,10 @@ func TestOIDCSelfServiceAndAdmin(t *testing.T) {
 		t.Fatalf("kim reading the audit log: %d", resp.StatusCode)
 	}
 
-	// Phone sign-in: the hub answers with a wga:// link for the signed-in user, new until the account exists.
+	// Phone sign-in: the hub answers with an interpose:// link for the signed-in user, new until the account exists.
 	resp, _ := get(t, kim, ui.URL+"/app/enroll")
 	loc, _ := url.Parse(resp.Header.Get("Location"))
-	if resp.StatusCode != http.StatusSeeOther || loc.Scheme != "wga" || loc.Query().Get("user") != "kim" || loc.Query().Get("mode") != "new" {
+	if resp.StatusCode != http.StatusSeeOther || loc.Scheme != "interpose" || loc.Query().Get("user") != "kim" || loc.Query().Get("mode") != "new" {
 		t.Fatalf("app enroll: %d %s", resp.StatusCode, loc)
 	}
 

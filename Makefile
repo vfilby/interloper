@@ -22,12 +22,12 @@ build:
 
 # The Warpgate adapter, for the Warpgate host (adapters/warpgate/README.md).
 dist-adapter: test
-	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags='-s -w' -o adapters/warpgate/deploy/wga-adapter ./adapters/warpgate/cmd/wga-adapter
-	@shasum -a 256 adapters/warpgate/deploy/wga-adapter
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags='-s -w' -o adapters/warpgate/deploy/interpose-adapter ./adapters/warpgate/cmd/interpose-adapter
+	@shasum -a 256 adapters/warpgate/deploy/interpose-adapter
 
 # The hub's container image (docs/docker.md).
 docker-hub:
 	docker build -f broker/Dockerfile -t interpose-hub:local .
 
 clean:
-	rm -rf bin adapters/warpgate/deploy/wga-adapter
+	rm -rf bin adapters/warpgate/deploy/interpose-adapter

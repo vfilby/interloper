@@ -12,7 +12,7 @@
 <h2>Next: tell adapters to trust {{.CodeUser}}</h2>
 <p>Account fingerprint (the phone shows it too): <span class="mono" style="font-weight: 600">{{.Account}}</span></p>
 <p>On each adapter's host that should send {{.CodeUser}} requests:</p>
-<pre class="mono" style="white-space: pre-wrap; padding: .6rem; background: #8881">wga-adapter trust add-user -dir &lt;adapter dir&gt; {{.CodeUser}} {{.Account}}</pre>
+<pre class="mono" style="white-space: pre-wrap; padding: .6rem; background: #8881">interpose-adapter trust add-user -dir &lt;adapter dir&gt; {{.CodeUser}} {{.Account}}</pre>
 <p class="muted">Once per user per adapter. Phones {{.CodeUser}} adds later are picked up automatically.</p>
 {{else}}
 <p class="ok">Approved: it is on {{.CodeUser}}'s roster. Adapters that trust {{.CodeUser}} send it requests from now on.</p>

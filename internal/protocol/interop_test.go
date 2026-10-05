@@ -14,13 +14,13 @@ import (
 
 // Interop with the Swift side (CryptoKit), through the files in testdata/interop:
 //
-//	go-sealed.json      written here with WGA_WRITE_FIXTURE=1: a device's raw private keys, an adapter key and a
+//	go-sealed.json      written here with INTERPOSE_WRITE_FIXTURE=1: a device's raw private keys, an adapter key and a
 //	                    sealed record. The app's tests open it with CryptoKit HPKE and verify the adapter signature.
 //	swift-decision.json written by the Swift side: a card and a decision on that record, signed by CryptoKit.
 //
 // To regenerate all four, in this order (the Swift roster test signs with the keys in go-sealed.json):
-//	WGA_WRITE_FIXTURE=1 go test -run TestWriteGo ./internal/protocol     (go-sealed.json, go-roster.json)
-//	cd ios/ApproverKit && WGA_WRITE_FIXTURE=1 swift test                    (swift-decision.json, swift-roster.json)
+//	INTERPOSE_WRITE_FIXTURE=1 go test -run TestWriteGo ./internal/protocol  (go-sealed.json, go-roster.json)
+//	cd ios/ApproverKit && INTERPOSE_WRITE_FIXTURE=1 swift test              (swift-decision.json, swift-roster.json)
 //	go test ./internal/protocol                                             (checks the Swift files)
 //	                    TestSwiftDecision verifies it here.
 //
@@ -46,8 +46,8 @@ type swiftDecision struct {
 }
 
 func TestWriteGoSealed(t *testing.T) {
-	if os.Getenv("WGA_WRITE_FIXTURE") == "" {
-		t.Skip("set WGA_WRITE_FIXTURE=1 to rewrite testdata/interop/go-sealed.json")
+	if os.Getenv("INTERPOSE_WRITE_FIXTURE") == "" {
+		t.Skip("set INTERPOSE_WRITE_FIXTURE=1 to rewrite testdata/interop/go-sealed.json")
 	}
 	now := time.Now()
 	dev, _ := softdevice.New("interop device")
@@ -148,7 +148,7 @@ func deviceFromFixture(t *testing.T, g goSealed) *softdevice.Device {
 
 // Roster interop, also through testdata/interop:
 //
-//	go-roster.json    written here with WGA_WRITE_FIXTURE=1 from go-sealed.json's device ("A"): r1 (A's genesis for
+//	go-roster.json    written here with INTERPOSE_WRITE_FIXTURE=1 from go-sealed.json's device ("A"): r1 (A's genesis for
 //	                  user "vince") and r2 (A admits a second device, B). The app's tests verify it against the account
 //	                  fingerprint and build r3 (A removes B) with CryptoKit.
 //	swift-roster.json written by the Swift side: {chain: [r1, r2, r3]}. TestSwiftRoster verifies it here.
@@ -162,8 +162,8 @@ type goRoster struct {
 }
 
 func TestWriteGoRoster(t *testing.T) {
-	if os.Getenv("WGA_WRITE_FIXTURE") == "" {
-		t.Skip("set WGA_WRITE_FIXTURE=1 to rewrite testdata/interop/go-roster.json")
+	if os.Getenv("INTERPOSE_WRITE_FIXTURE") == "" {
+		t.Skip("set INTERPOSE_WRITE_FIXTURE=1 to rewrite testdata/interop/go-roster.json")
 	}
 	var g goSealed
 	readJSON(t, "go-sealed.json", &g)

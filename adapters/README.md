@@ -5,7 +5,7 @@ One directory per service the clearing house can guard. Each builds on the adapt
 
 | Adapter | Guards | Binary | Status |
 |---|---|---|---|
-| [warpgate](warpgate/) | Warpgate SSH ticket requests | `wga-adapter` | in use |
+| [warpgate](warpgate/) | Warpgate SSH ticket requests | `interpose-adapter` | in use |
 
 Planned (see docs/DESIGN.md, "Next adapters"): held mail (Mailpit), scoped document leases (Paperless via an MCP
 gateway).

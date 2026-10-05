@@ -1,4 +1,4 @@
-// Command wga-adapter-demo is the reference adapter: the shared adapter command line (adapter/cli) with the demo
+// Command interpose-adapter-demo is the reference adapter: the shared adapter command line (adapter/cli) with the demo
 // Source, which has no real service behind it. Requests are added over a loopback HTTP endpoint (-demo-listen) and
 // "approving" only records the outcome. It is what the end-to-end tests run, and the shape to copy for a new adapter:
 // a Source, and a main that hands it to cli.Main. See adapter/README.md.
@@ -19,7 +19,7 @@ import (
 )
 
 func main() {
-	cli.Main("wga-adapter-demo", cli.Source{Name: "demo", Flags: demoFlags})
+	cli.Main("interpose-adapter-demo", cli.Source{Name: "demo", Flags: demoFlags})
 }
 
 func demoFlags(fs *flag.FlagSet) func(context.Context, *slog.Logger) (adapter.Source, error) {

@@ -73,7 +73,7 @@ proxy to the hub's `-admin` listener. Do **not** put forward-auth in front of it
 itself, and `/oidc/callback` must reach it.
 
 ```
-wga-hub \
+interpose-hub \
   -api :8740 -url https://<hub API name>:8740 \
   -admin 0.0.0.0:8741 \
   -oidc-issuer https://sso.home.example \

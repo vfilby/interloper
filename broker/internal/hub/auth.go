@@ -51,8 +51,8 @@ type Auth struct {
 }
 
 const (
-	sessionCookie = "wga_session"
-	loginCookie   = "wga_login"
+	sessionCookie = "interpose_session"
+	loginCookie   = "interpose_login"
 )
 
 // NewOIDC discovers the issuer and returns an Auth. key signs cookies (32+ random bytes, kept in a file).

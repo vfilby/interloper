@@ -5,11 +5,11 @@ Warpgate after a verified decision. It runs on the Warpgate host, beside Warpgat
 manage ticket requests and nothing else. How adapters work in general: [adapter/README.md](../../adapter/README.md).
 
 ```
-source.go              package warpgate: the Source (pending requests -> items; approve/deny in Warpgate)
-policy/                denies, before anyone is asked, what is not allowed at all (unknown requesters, too long)
-wgapi/                 the small part of Warpgate's admin API it uses (as of Warpgate 0.28.6)
-cmd/wga-adapter/       the binary: adapter/cli with the Warpgate source
-deploy/                Dockerfile, compose.yaml, adapter.env.default, install.sh (guided install on the host)
+source.go                package warpgate: the Source (pending requests -> items; approve/deny in Warpgate)
+policy/                  denies, before anyone is asked, what is not allowed at all (unknown requesters, too long)
+wgapi/                   the small part of Warpgate's admin API it uses (as of Warpgate 0.28.6)
+cmd/interpose-adapter/   the binary: adapter/cli with the Warpgate source
+deploy/                  Dockerfile, compose.yaml, adapter.env.default, install.sh (guided install on the host)
 ```
 
 ## Settings
@@ -40,10 +40,11 @@ own user rather than sharing one, so it can be revoked alone.
 
 On your workstation, in this repository:
 ```
-make dist-adapter        # runs the tests, then builds adapters/warpgate/deploy/wga-adapter (linux/arm64); note the sha256
+make dist-adapter        # runs the tests, then builds adapters/warpgate/deploy/interpose-adapter (linux/arm64); note the sha256
 ```
-Copy `adapters/warpgate/deploy/` (`install.sh`, `Dockerfile`, `compose.yaml`, `adapter.env.default`, `wga-adapter`) and
-the Warpgate token (as a file named `warpgate-token`) into one directory on the adapter host, e.g. `~/adapter-staging`.
+Copy `adapters/warpgate/deploy/` (`install.sh`, `Dockerfile`, `compose.yaml`, `adapter.env.default`,
+`interpose-adapter`) and the Warpgate token (as a file named `warpgate-token`) into one directory on the adapter host,
+e.g. `~/adapter-staging`.
 
 The image is built on the host from that binary, not pulled from a registry: the binary you checked is the one that
 runs.
