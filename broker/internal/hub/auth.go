@@ -16,7 +16,7 @@ import (
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
 
-	"github.com/vfilby/interloper/internal/protocol"
+	"github.com/vfilby/interpose/internal/protocol"
 )
 
 // Identity is who is using the management UI.

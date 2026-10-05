@@ -18,8 +18,8 @@ import (
 
 	"rsc.io/qr"
 
-	"github.com/vfilby/interloper/internal/audit"
-	"github.com/vfilby/interloper/internal/protocol"
+	"github.com/vfilby/interpose/internal/audit"
+	"github.com/vfilby/interpose/internal/protocol"
 )
 
 //go:embed templates/*.html

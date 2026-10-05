@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vfilby/interloper/broker/internal/apns"
-	"github.com/vfilby/interloper/internal/audit"
-	"github.com/vfilby/interloper/internal/protocol"
+	"github.com/vfilby/interpose/broker/internal/apns"
+	"github.com/vfilby/interpose/internal/audit"
+	"github.com/vfilby/interpose/internal/protocol"
 )
 
 // API serves adapters and devices (docs/PROTOCOL.md, "Hub HTTP API"). Tokens here are transport credentials only.

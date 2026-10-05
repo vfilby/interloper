@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/vfilby/interloper/internal/protocol"
+	"github.com/vfilby/interpose/internal/protocol"
 )
 
 // Pin is a user this adapter trusts: their id and account fingerprint (the hash of their genesis roster).

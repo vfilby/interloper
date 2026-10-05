@@ -10,7 +10,7 @@ and uploaded by GitHub Actions: `.github/workflows/ios-testflight.yml`, modelled
 ## One-time setup
 
 ### 1. GitHub repository
-The repo is `vfilby/interloper` (**public**: no internal hostnames, IPs or keys in it). Claude pushes with `cgit`,
+The repo is `vfilby/interpose` (**public**: no internal hostnames, IPs or keys in it). Claude pushes with `cgit`,
 using its per-repo deploy key.
 
 ### 2. Apple Developer (developer.apple.com → Certificates, Identifiers & Profiles)
@@ -50,13 +50,13 @@ GitHub cannot read secrets back, so they cannot be copied from MigraLog's repo. 
 
 With the GitHub CLI (quote filenames: exported ones contain spaces and parentheses):
 ```
-gh secret set APPLE_TEAM_ID -R vfilby/interloper -b ABCDE12345
-base64 -i "Interloper_App_Store.mobileprovision" | gh secret set INTERLOPER_PROVISIONING_PROFILE -R vfilby/interloper
-base64 -i "<exported>.p12" | gh secret set SWIFT_CERTIFICATE_P12 -R vfilby/interloper
-pbpaste | gh secret set SWIFT_CERTIFICATE_PASSWORD -R vfilby/interloper   # copy the password first
-pbpaste | gh secret set ASC_ISSUER_ID -R vfilby/interloper                # copy the Issuer ID first
-gh secret set ASC_KEY_ID -R vfilby/interloper -b <KEYID>
-gh secret set ASC_API_KEY_P8 -R vfilby/interloper < "AuthKey_<KEYID>.p8"
+gh secret set APPLE_TEAM_ID -R vfilby/interpose -b ABCDE12345
+base64 -i "Interloper_App_Store.mobileprovision" | gh secret set INTERLOPER_PROVISIONING_PROFILE -R vfilby/interpose
+base64 -i "<exported>.p12" | gh secret set SWIFT_CERTIFICATE_P12 -R vfilby/interpose
+pbpaste | gh secret set SWIFT_CERTIFICATE_PASSWORD -R vfilby/interpose   # copy the password first
+pbpaste | gh secret set ASC_ISSUER_ID -R vfilby/interpose                # copy the Issuer ID first
+gh secret set ASC_KEY_ID -R vfilby/interpose -b <KEYID>
+gh secret set ASC_API_KEY_P8 -R vfilby/interpose < "AuthKey_<KEYID>.p8"
 ```
 - **Use `pbpaste |`, not a bare `gh secret set NAME`:** in some shells `gh` does not prompt and silently reads stdin,
   which is easy to get wrong.
@@ -71,7 +71,7 @@ never request content.
 1. **Identifiers → `com.eff3.interloper` → Capabilities:** tick **Push Notifications**, then Save. (No certificate:
    the hub uses a key, below.)
 2. **Profiles → Interloper App Store → Edit → Save**, download it, and update the secret:
-   `base64 -i "Interloper_App_Store.mobileprovision" | gh secret set INTERLOPER_PROVISIONING_PROFILE -R vfilby/interloper`.
+   `base64 -i "Interloper_App_Store.mobileprovision" | gh secret set INTERLOPER_PROVISIONING_PROFILE -R vfilby/interpose`.
    An old profile without push makes the archive step fail ("doesn't include the aps-environment entitlement").
 3. **Keys → +:** name `Interloper APNs`, tick **Apple Push Notifications service (APNs)**, environment **Sandbox &
    Production**, then download `AuthKey_<KEYID>.p8`. It downloads **once**; keep it with the signing material in
