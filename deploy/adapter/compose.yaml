@@ -1,4 +1,4 @@
-# /opt/interpose-adapter on interloper: the Warpgate adapter of the Interloper clearing house, beside Warpgate.
+# /opt/interpose-adapter on the Warpgate host: the Warpgate adapter of the clearing house, beside Warpgate.
 # Its own compose project, apart from Warpgate and the phase-1 broker; restarting it touches neither.
 #
 # It holds what can act: the Warpgate token (approve/deny ticket requests) and the trust list (which accounts' phones
