@@ -1,17 +1,17 @@
 # Broker: the Interpose Hub
 
-`wga-hub` is the clearing house's relay and management UI. It holds **nothing that can act**: adapters seal requests
-to users' phones and verify the phones' signed decisions themselves. A compromised hub can drop or delay requests; it
-cannot approve, forge or read them ([SECURITY.md](../SECURITY.md)).
+`interpose-hub` is the clearing house's relay and management UI. It holds **nothing that can act**: adapters seal
+requests to users' phones and verify the phones' signed decisions themselves. A compromised hub can drop or delay
+requests; it cannot approve, forge or read them ([SECURITY.md](../SECURITY.md)).
 
 ```
-cmd/wga-hub/        the hub
-cmd/wga-device/     a software stand-in for the phone, for tests and CLI use (keys in a file: never trust it on a
-                    real adapter)
-internal/hub/       API, management UI (server-rendered, no JavaScript), OIDC sign-in, store, APNs wake-ups
-internal/apns/      APNs client (token auth)
-e2e/                in-process end-to-end tests: a real hub, the adapter core with the demo source, software phones
-Dockerfile          container image, built from source (docs/docker.md)
+cmd/interpose-hub/      the hub
+cmd/interpose-device/   a software stand-in for the phone, for tests and CLI use (keys in a file: never trust it on a
+                        real adapter)
+internal/hub/           API, management UI (server-rendered, no JavaScript), OIDC sign-in, store, APNs wake-ups
+internal/apns/          APNs client (token auth)
+e2e/                    in-process end-to-end tests: a real hub, the adapter core with the demo source, software phones
+Dockerfile              container image, built from source (docs/docker.md)
 ```
 
 The hub shares the wire protocol, audit log and software device with the adapters through `../internal`.
@@ -41,7 +41,7 @@ Without `-oidc-issuer` there is no sign-in (everyone is an admin), so the hub re
 listens on loopback only. That is the local development mode:
 
 ```
-go run ./broker/cmd/wga-hub          # API on :8740, management UI on http://127.0.0.1:8741
+go run ./broker/cmd/interpose-hub          # API on :8740, management UI on http://127.0.0.1:8741
 ```
 
 In production, run it behind a reverse proxy that terminates TLS, with OIDC: see

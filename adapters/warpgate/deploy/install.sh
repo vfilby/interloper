@@ -44,13 +44,13 @@ envget() { sed -n "s/^$1=//p" "$DEST/.env" 2>/dev/null | tail -1; }
 
 [ "$(id -u)" = 0 ] || fail "run it with sudo: cd $HERE && sudo ./install.sh"
 [ -t 0 ] || fail "run it in an interactive terminal: it asks for values along the way"
-for f in Dockerfile compose.yaml wga-adapter adapter.env.default; do
+for f in Dockerfile compose.yaml interpose-adapter adapter.env.default; do
   [ -f "$HERE/$f" ] || fail "$HERE/$f is missing. Copy all of adapters/warpgate/deploy/ here after running make dist-adapter."
 done
 command -v docker >/dev/null || fail "docker is not installed on this host"
 
 step "1/7 The adapter binary"
-sum=$(sha256sum "$HERE/wga-adapter" | cut -d' ' -f1)
+sum=$(sha256sum "$HERE/interpose-adapter" | cut -d' ' -f1)
 want=$(printf '%s' "${1:-}" | tr 'A-F' 'a-f')
 if [ -n "$want" ]; then
   [ "$sum" = "$want" ] || fail "the binary here has sha256 $sum, not the $want you gave: copy the binary you built"
@@ -115,7 +115,7 @@ fi
 
 step "4/7 Install the files and build the image"
 install -m 0644 -o root -g root "$HERE/Dockerfile" "$HERE/compose.yaml" "$DEST/"
-install -m 0755 -o root -g root "$HERE/wga-adapter" "$DEST/"
+install -m 0755 -o root -g root "$HERE/interpose-adapter" "$DEST/"
 printf '%s\n' "$sum" > "$DEST/.confirmed-sha256"
 compose build --quiet
 ok "image built"

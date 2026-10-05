@@ -52,7 +52,7 @@ payload names the same signer (`adapter` / `device_id`).
 ```
 
 RFC 9180 HPKE, mode base: DHKEM(P-256, HKDF-SHA256) `0x0010`, HKDF-SHA256 `0x0001`, AES-256-GCM `0x0002`
-(CryptoKit `HPKE.Ciphersuite.P256_SHA256_AES_GCM_256`). `info` = the ASCII bytes `wga/v1/record`, `aad` = empty,
+(CryptoKit `HPKE.Ciphersuite.P256_SHA256_AES_GCM_256`). `info` = the ASCII bytes `interpose/v1/record`, `aad` = empty,
 one message per context. The plaintext is the JSON of a **signed envelope** whose payload is a request record: sign,
 then encrypt, so the hub sees neither the record nor the adapter's signature over it.
 
@@ -205,7 +205,7 @@ a removal takes effect at an adapter only once that adapter sees it.
 
 An admin can also delete an account at the hub (management UI, break glass): for when none of its phones is left to
 approve another. The next enrollment of that user starts a new account with a new fingerprint, which adapters do not
-trust until `wga-adapter trust add-user` is run again; the old account's trust does not carry over.
+trust until `interpose-adapter trust add-user` is run again; the old account's trust does not carry over.
 
 ## Hub HTTP API (transport only)
 
@@ -232,7 +232,7 @@ reach different routes. Tokens are transport credentials: they stop LAN noise an
 The enrollment link the management UI shows as a QR code (and as text):
 
 ```
-wga://enroll?hub=<url-encoded hub base URL>&code=<one-time code>&user=<user id>&mode=new|join
+interpose://enroll?hub=<url-encoded hub base URL>&code=<one-time code>&user=<user id>&mode=new|join
 ```
 
 `mode=new` makes the first device of a new user, which creates and signs r1. `mode=join` adds a device to an existing

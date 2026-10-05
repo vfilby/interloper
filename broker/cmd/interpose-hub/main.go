@@ -1,4 +1,4 @@
-// Command wga-hub is the clearing house's relay: the device/adapter API and the management UI.
+// Command interpose-hub is the clearing house's relay: the device/adapter API and the management UI.
 //
 // It holds no key that can approve anything (docs/PROTOCOL.md). Two listeners:
 //

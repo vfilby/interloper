@@ -45,7 +45,7 @@ public struct DevicePublicKeys: Equatable, Sendable {
     public var deviceID: String { Fingerprint.deviceID(approveKey: approve) }
 }
 
-public let recordInfo = Data("wga/v1/record".utf8)
+public let recordInfo = Data("interpose/v1/record".utf8)
 
 /// Picks the Secure Enclave when there is one. The simulator always gets software keys: it reports a Secure Enclave,
 /// but Face ID / app-password access control there is not the real thing.

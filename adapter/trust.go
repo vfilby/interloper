@@ -21,7 +21,7 @@ type Pin struct {
 }
 
 // Trust is the adapter's own view of who may approve: pinned users (trusted-users.json, written by
-// `wga-adapter trust add-user`) and, for each, the newest roster chain it has verified back to the pin
+// `interpose-adapter trust add-user`) and, for each, the newest roster chain it has verified back to the pin
 // (trusted-heads.json). Chains come through the hub, but nothing about them is taken on the hub's word: a chain must
 // verify against the pin, and a verified head is never replaced by an older or a different one at the same seq.
 type Trust struct {

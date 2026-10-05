@@ -1,5 +1,5 @@
 // Package softdevice is a device with software keys: the phone's half of the protocol, for tests and for the
-// `wga-device` command line stand-in. It is never a real approver: its keys are files, not Secure Enclave keys.
+// `interpose-device` command line stand-in. It is never a real approver: its keys are files, not Secure Enclave keys.
 package softdevice
 
 import (

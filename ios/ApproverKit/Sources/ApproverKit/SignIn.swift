@@ -56,7 +56,7 @@ public enum SignIn {
         return info
     }
 
-    /// Where the person continues on the server: sign in there, and the server answers with a wga://enroll link.
+    /// Where the person continues on the server: sign in there, and the server answers with an interpose://enroll link.
     /// A local (development) server takes the user id as a parameter instead of a sign-in.
     public static func enrollURL(_ base: URL, user: String? = nil) -> URL {
         var c = URLComponents(url: base.appendingPathComponent("app/enroll"), resolvingAgainstBaseURL: false)!

@@ -75,7 +75,7 @@ never request content.
    An old profile without push makes the archive step fail ("doesn't include the aps-environment entitlement").
 3. **Keys → +:** name `Interloper APNs`, tick **Apple Push Notifications service (APNs)**, environment **Sandbox &
    Production**, then download `AuthKey_<KEYID>.p8`. It downloads **once**; keep it with the signing material in
-   1Password. It goes to the hub, not to GitHub: `wga-hub -apns-key-file … -apns-key-id <KEYID>`.
+   1Password. It goes to the hub, not to GitHub: `interpose-hub -apns-key-file … -apns-key-id <KEYID>`.
 
 Debug builds from Xcode use APNs' development environment and TestFlight builds production; the app tells the hub
 which, so one key serves both.

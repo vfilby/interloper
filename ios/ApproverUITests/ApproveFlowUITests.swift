@@ -1,16 +1,16 @@
 import XCTest
 
 /// Drives the real app against a live hub and demo adapter (see ios/README.md, "End-to-end UI test").
-/// The hub's management UI comes from the environment: `TEST_RUNNER_WGA_ADMIN_URL=http://127.0.0.1:18741` on
+/// The hub's management UI comes from the environment: `TEST_RUNNER_INTERPOSE_ADMIN_URL=http://127.0.0.1:18741` on
 /// xcodebuild. The hub runs without OIDC (local mode), so phone sign-in answers at once for `?user=vince`.
 /// Expects one normal-risk request titled "claude wants RW on db-01" and one high-risk "helper wants ADMIN on web-02".
 final class ApproveFlowUITests: XCTestCase {
     func testEnrollApproveAndHoldToApprove() throws {
-        guard let admin = ProcessInfo.processInfo.environment["WGA_ADMIN_URL"], !admin.isEmpty else {
-            throw XCTSkip("WGA_ADMIN_URL not set: needs a running hub")
+        guard let admin = ProcessInfo.processInfo.environment["INTERPOSE_ADMIN_URL"], !admin.isEmpty else {
+            throw XCTSkip("INTERPOSE_ADMIN_URL not set: needs a running hub")
         }
         let app = XCUIApplication()
-        app.launchArguments = ["-wgaReset"]
+        app.launchArguments = ["-interposeReset"]
         app.launch()
 
         // Step 1: the Interloper server. Return submits, and the app checks the address is one (/app/hello).
@@ -83,7 +83,7 @@ final class ApproveFlowUITests: XCTestCase {
         let useLink = app.buttons["I have an enrollment link"]
         XCTAssertTrue(useLink.waitForExistence(timeout: 5), "connect sheet did not open on the server step")
         useLink.tap()
-        let field = app.textFields["wga://enroll?hub=…&code=…"]
+        let field = app.textFields["interpose://enroll?hub=…&code=…"]
         XCTAssertTrue(field.waitForExistence(timeout: 5), "no link field")
         field.tap()
         field.typeText(link2)
@@ -123,7 +123,7 @@ final class ApproveFlowUITests: XCTestCase {
             done.fulfill()
         }.resume()
         wait(for: [done], timeout: 10)
-        guard let r = html.range(of: #"wga://enroll[^<"']*"#, options: .regularExpression) else {
+        guard let r = html.range(of: #"interpose://enroll[^<"']*"#, options: .regularExpression) else {
             XCTFail("no enrollment link in the management UI's page:\n\(html.prefix(500))")
             throw URLError(.cannotParseResponse)
         }

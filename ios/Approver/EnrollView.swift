@@ -151,14 +151,14 @@ struct EnrollView: View {
     }
 
     /// Opens the server in a private browser session (no shared cookies, no "wants to sign in" prompt) and waits for
-    /// it to send back a wga://enroll link.
+    /// it to send back an interpose://enroll link.
     private func continueOnServer(_ base: URL, _ info: ServerInfo) async {
         busy = true
         stepError = nil
         defer { busy = false }
         do {
             let back = try await webAuth.authenticate(using: SignIn.enrollURL(base, user: info.isLocal ? localUser : nil),
-                                                      callbackURLScheme: "wga", preferredBrowserSession: .ephemeral)
+                                                      callbackURLScheme: "interpose", preferredBrowserSession: .ephemeral)
             guard let l = EnrollmentLink(back.absoluteString) else {
                 stepError = "The server answered with something that is not an enrollment link."
                 return
@@ -175,7 +175,7 @@ struct EnrollView: View {
 
     private var linkStep: some View {
         Section {
-            TextField("wga://enroll?hub=…&code=…", text: $linkText, axis: .vertical)
+            TextField("interpose://enroll?hub=…&code=…", text: $linkText, axis: .vertical)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .font(.footnote.monospaced())
@@ -281,7 +281,7 @@ struct EnrollmentSummaryView: View {
                     Text("Account fingerprint")
                 } footer: {
                     if summary.account != nil {
-                        Text("Adapters trust the account by this fingerprint: `wga-adapter trust add-user \(summary.user) \(summary.account ?? "")`.")
+                        Text("Adapters trust the account by this fingerprint: `interpose-adapter trust add-user \(summary.user) \(summary.account ?? "")`.")
                     }
                 }
                 Section {

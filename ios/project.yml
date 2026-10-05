@@ -55,7 +55,7 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         CFBundleURLTypes:
           - CFBundleURLName: com.eff3.interloper.enroll
-            CFBundleURLSchemes: [wga]
+            CFBundleURLSchemes: [interpose]
   ApproverUITests:
     type: bundle.ui-testing
     platform: iOS
