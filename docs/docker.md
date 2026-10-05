@@ -6,14 +6,19 @@ the host, never in the repository.
 
 | | Image | Built from | Where it runs |
 |---|---|---|---|
-| Hub | `interpose-hub` | source: [`broker/Dockerfile`](../broker/Dockerfile) | anywhere behind your reverse proxy |
+| Hub | `ghcr.io/vfilby/interpose-hub` | source: [`broker/Dockerfile`](../broker/Dockerfile) | anywhere behind your reverse proxy |
 | Warpgate adapter | `interpose-adapter` | a checked binary: [`adapters/warpgate/deploy/Dockerfile`](../adapters/warpgate/deploy/Dockerfile) | on the Warpgate host |
 
-CI builds both images on every pull request; nothing is pushed to a registry.
+CI builds both images on every pull request. The hub image is published to GHCR from `main`
+([`.github/workflows/docker-publish.yml`](../.github/workflows/docker-publish.yml)): `latest` and `sha-<commit>`, for
+`linux/amd64` and `linux/arm64`. The adapter image is never pushed.
 
 ## The hub
 
-Build from the repository root (the Dockerfile needs the whole Go module):
+The compose file below pulls the published image. Pin `sha-<commit>` instead of `latest` to choose when to update.
+
+To build it yourself instead, from the repository root (the Dockerfile needs the whole Go module), and set
+`image: interpose-hub:local`:
 
 ```
 make docker-hub          # = docker build -f broker/Dockerfile -t interpose-hub:local .
@@ -29,7 +34,7 @@ name: interpose-hub
 
 services:
   hub:
-    image: interpose-hub:local
+    image: ghcr.io/vfilby/interpose-hub:latest
     restart: unless-stopped
     user: "65532:65532"
     read_only: true
@@ -84,8 +89,8 @@ Drop the two `apns` lines (flag and volume) to run without push wake-ups.
 The reverse proxy terminates TLS and sends `/v1/*` and `/healthz` on `HUB_URL` to port 8740, and the management UI host
 to port 8741. If the proxy runs in Docker on the same host, put both on a shared network instead of publishing ports.
 
-**Updating:** pull the new commit, `make docker-hub` (or build on the host), `docker compose up -d`. The state
-directory carries over.
+**Updating:** `docker compose pull && docker compose up -d` (with a pinned tag, change it first). If you build the image
+yourself: pull the new commit, `make docker-hub`, `docker compose up -d`. The state directory carries over.
 
 **Back up** `data/`: it holds the rosters, adapter registrations and device tokens. Losing it means re-enrolling
 phones and re-registering adapters; it holds nothing that can approve a request.

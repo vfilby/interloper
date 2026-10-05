@@ -37,3 +37,10 @@ What that protection means for `main`:
   `allow_force_pushes` to `true` and run the same command again.
 
 Tags are not covered, so the TestFlight workflow can still push its `ios/v*` tags.
+
+## The hub image on GHCR (once, after the first publish)
+
+[`.github/workflows/docker-publish.yml`](../../.github/workflows/docker-publish.yml) creates the
+`ghcr.io/vfilby/interpose-hub` package on its first run, and GHCR makes new packages private. Make it public so hosts
+can `docker compose pull` without logging in: on GitHub, your profile → **Packages** → `interpose-hub` → **Package
+settings** → **Change visibility** → Public. The image's source label already links it to this repository.
