@@ -1,7 +1,11 @@
-# TestFlight beta for the Interloper app
+# TestFlight beta for the Interpose app
 
-The app is **Interloper** (`com.eff3.interloper`), on team `ABCDE12345`, the same team as MigraLog. Builds are made
+The app is **Interpose** (`com.eff3.interloper`), on team `ABCDE12345`, the same team as MigraLog. Builds are made
 and uploaded by GitHub Actions: `.github/workflows/ios-testflight.yml`, modelled on MigraLog's release pipeline.
+- **Name:** the app was first called Interloper, and the identifiers keep that name: the bundle id, the App ID and
+  profile below, the `INTERLOPER_PROVISIONING_PROFILE` secret and the keychain items. Changing the bundle id would make
+  it a different app (and lose every phone's enrollment). The home-screen name is `CFBundleDisplayName` in
+  `ios/project.yml`; the name TestFlight and the App Store show is the App Store Connect app's name (App Information).
 - **Signing:** manual, with the team's **Apple Distribution** certificate and an App Store profile named
   **Interloper App Store**.
 - **Upload:** `xcodebuild -exportArchive` with an App Store Connect API key (`ios/ExportOptions.plist`).
@@ -27,7 +31,7 @@ using its per-repo deploy key.
 
 ### 3. App Store Connect (appstoreconnect.apple.com)
 1. **Apps → + New App:** iOS, name `Interloper` (App Store names are global; if it is taken, use e.g.
-   `Interloper Approvals`; the home-screen name stays "Interloper"), bundle id `com.eff3.interloper`, SKU `interloper`.
+   `Interloper Approvals`; the home-screen name comes from `CFBundleDisplayName`), bundle id `com.eff3.interloper`, SKU `interloper`.
 2. **TestFlight → Internal Testing → +:** group `Beta`, with **automatic distribution** on. Add yourself (and family
    members who should approve, once they are App Store Connect users).
 
@@ -102,7 +106,7 @@ This is not legal advice.
 
 ## Using a TestFlight build
 
-- **Reaching the server:** the phone must reach your Interloper server. Use its https address (e.g.
+- **Reaching the server:** the phone must reach your Interpose server. Use its https address (e.g.
   `interpose-hub.home.example`) on the LAN or VPN. A development hub on a Mac works over http on the local network
   (`http://<mac>.local:8741`).
 - **Keys:** a TestFlight build uses the **Secure Enclave**: Face ID (current enrollment) or the app PIN set when

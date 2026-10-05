@@ -8,7 +8,7 @@ Three parts:
   the user's phones, decisions are signed on them.
 - **Adapters**, one beside each service it guards: they build the requests, verify every decision against their own
   trust list, and act.
-- **The app** (Interloper, iOS): shows a request, asks for Face ID, signs the decision.
+- **The app** (Interpose, iOS): shows a request, asks for Face ID, signs the decision.
 
 ## Layout
 

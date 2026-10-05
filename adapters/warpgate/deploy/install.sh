@@ -149,7 +149,7 @@ if [ -n "$trusted" ]; then
 fi
 if [ -z "$trusted" ]; then
   yourturn "trust your account" \
-    "On a phone that is on the account: Interloper → Device tab → the Account section (not the Device section)." \
+    "On a phone that is on the account: Interpose → Device tab → the Account section (not the Device section)." \
     "Enter the user id (next to Account) and the Account fingerprint: 8 groups of 4, xxxx-xxxx-...-xxxx." \
     "(The 4-group fingerprint at the top of the tab is the device's, not the account's.)" \
     "Read them off the phone, never off the hub's page: a lying hub would get its own account trusted."
@@ -170,7 +170,7 @@ compose logs "$SVC" 2>/dev/null | grep -q '"msg":"started"' ||
 ok "the adapter is running"
 
 yourturn "check on the phone" \
-  "Interloper → Device → Check hub for new adapters." \
+  "Interpose → Device → Check hub for new adapters." \
   "The adapter 'warpgate' must show fingerprint  $fp" \
   "Then file a Warpgate ticket request: the phone should get it within seconds."
 printf '\nLogs:      cd %s && sudo docker compose logs -f\n' "$DEST"

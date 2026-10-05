@@ -13,7 +13,7 @@ final class ApproveFlowUITests: XCTestCase {
         app.launchArguments = ["-interposeReset"]
         app.launch()
 
-        // Step 1: the Interloper server. Return submits, and the app checks the address is one (/app/hello).
+        // Step 1: the Interpose server. Return submits, and the app checks the address is one (/app/hello).
         let address = app.textFields["interpose-hub.home.example"]
         XCTAssertTrue(address.waitForExistence(timeout: 10), "the app does not open on the server step")
         attach(app, "server-step")

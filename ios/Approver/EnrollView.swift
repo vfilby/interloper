@@ -4,7 +4,7 @@ import SwiftUI
 import UIKit
 
 /// Onboarding, in three steps:
-///   1. Interloper server: the person enters its address; the app checks it is one (/app/hello).
+///   1. Interpose server: the person enters its address; the app checks it is one (/app/hello).
 ///   2. Continue on the server: the person signs in there (two-factor), and the server hands the app an enrollment
 ///      link for them: a new account the first time, otherwise another device to approve on one they have.
 ///   3. Connect this device: name it (and set the app PIN on a device with a Secure Enclave), then enroll.
@@ -62,7 +62,7 @@ struct EnrollView: View {
                 Section { Text(e).foregroundStyle(.red).font(.footnote) }
             }
         }
-        .navigationTitle(switching ? "Connect to a server" : "Connect to Interloper")
+        .navigationTitle(switching ? "Connect to a server" : "Connect to Interpose")
         .toolbar {
             if switching {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
@@ -91,9 +91,9 @@ struct EnrollView: View {
                 }
                 .disabled(SignIn.base(address) == nil || busy)
             } header: {
-                Text("Interloper server")
+                Text("Interpose server")
             } footer: {
-                Text("The address of your Interloper server: the page you manage it from.")
+                Text("The address of your Interpose server: the page you manage it from.")
             }
             Section {
                 if QRScannerSheet.isAvailable {

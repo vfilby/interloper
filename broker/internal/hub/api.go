@@ -120,7 +120,7 @@ func (a *API) publish(w http.ResponseWriter, r *http.Request, ad *Adapter) {
 	if in.ExpiresAt > 0 {
 		exp = time.Unix(in.ExpiresAt, 0)
 	}
-	a.wake(ids, apns.Notification{Title: "Approval request", Body: "Open Interloper to review it.", Expiration: exp,
+	a.wake(ids, apns.Notification{Title: "Approval request", Body: "Open Interpose to review it.", Expiration: exp,
 		ThreadID: "requests"})
 	w.WriteHeader(http.StatusCreated)
 }
@@ -199,7 +199,7 @@ func (a *API) enroll(w http.ResponseWriter, r *http.Request) {
 	}
 	if !e.Active {
 		a.wake(a.Store.members(e.User), apns.Notification{Title: "New device",
-			Body: "A device asks to join your account. Open Interloper to compare fingerprints.", ThreadID: "joins"})
+			Body: "A device asks to join your account. Open Interpose to compare fingerprints.", ThreadID: "joins"})
 	}
 	ak, _ := protocol.UnB64(e.Card.ApproveKey)
 	a.audit(audit.Event{Time: now, Event: "enrolled", Device: e.Card.DeviceID, Requester: e.User,

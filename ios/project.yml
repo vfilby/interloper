@@ -1,5 +1,6 @@
 # XcodeGen spec: `xcodegen generate` writes Approver.xcodeproj (not committed).
-# The app is "Interloper" (com.eff3.interloper) on the eff3 team; the Xcode target keeps its working name, Approver.
+# The app is "Interpose" (bundle id com.eff3.interloper, kept from its first name) on the eff3 team; the Xcode target
+# keeps its working name, Approver.
 name: Approver
 options:
   bundleIdPrefix: com.eff3
@@ -41,7 +42,7 @@ targets:
     info:
       path: Approver/Info.plist
       properties:
-        CFBundleDisplayName: Interloper
+        CFBundleDisplayName: Interpose
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
@@ -49,8 +50,8 @@ targets:
         NSFaceIDUsageDescription: Face ID unlocks the key that signs your approvals.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
-        NSLocalNetworkUsageDescription: The app talks to your Interloper server on the local network.
-        NSCameraUsageDescription: The camera scans the enrollment QR code from your Interloper server.
+        NSLocalNetworkUsageDescription: The app talks to your Interpose server on the local network.
+        NSCameraUsageDescription: The camera scans the enrollment QR code from your Interpose server.
         # Only Apple's own encryption (CryptoKit, Security), which needs no export documentation (runbook).
         ITSAppUsesNonExemptEncryption: false
         CFBundleURLTypes:
