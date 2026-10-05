@@ -23,8 +23,8 @@ import (
 	"os"
 	"time"
 
-	"warpgate-approver/broker/internal/protocol"
-	"warpgate-approver/broker/internal/softdevice"
+	"github.com/vfilby/interloper/internal/protocol"
+	"github.com/vfilby/interloper/internal/softdevice"
 )
 
 // session is what the device keeps besides its keys: the hub, its token, the pinned adapter keys, and what it knows

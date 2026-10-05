@@ -36,9 +36,9 @@ import (
 	"syscall"
 	"time"
 
-	"warpgate-approver/broker/internal/apns"
-	"warpgate-approver/broker/internal/audit"
-	"warpgate-approver/broker/internal/hub"
+	"github.com/vfilby/interloper/broker/internal/apns"
+	"github.com/vfilby/interloper/broker/internal/hub"
+	"github.com/vfilby/interloper/internal/audit"
 )
 
 type config struct {

@@ -1,0 +1,105 @@
+# Tests on every push and every pull request. Branch protection on main requires the "CI ok" check, which passes only
+# when every job it lists in `needs` passed; add new required jobs there, not to the branch protection settings.
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    name: Go (vet, test, e2e)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          check-latest: true
+      - name: gofmt
+        run: |
+          out=$(gofmt -l .)
+          if [ -n "$out" ]; then echo "::error::gofmt needed:"; echo "$out"; exit 1; fi
+      - name: go mod tidy
+        run: go mod tidy -diff
+      - name: vet
+        run: go vet ./...
+      - name: test
+        run: go test -race -count=1 ./...
+      - name: end to end (hub, reference adapter, software device)
+        run: scripts/e2e-cli.sh
+      - name: cross-build (linux/arm64, linux/amd64)
+        run: |
+          for arch in arm64 amd64; do
+            CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath -o "bin/$arch/" ./broker/cmd/... ./adapter/cmd/... ./adapters/warpgate/cmd/...
+          done
+          ls -l bin/*
+
+  docker:
+    name: Docker images
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          check-latest: true
+      - name: hub image
+        run: docker build -f broker/Dockerfile -t interpose-hub:ci .
+      - name: Warpgate adapter image
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o adapters/warpgate/deploy/wga-adapter ./adapters/warpgate/cmd/wga-adapter
+          docker build -t interpose-adapter:ci adapters/warpgate/deploy
+      - name: compose file
+        working-directory: adapters/warpgate/deploy
+        run: cp adapter.env.default .env && docker compose config -q
+      - name: install script
+        run: bash -n adapters/warpgate/deploy/install.sh
+
+  ios:
+    name: ApproverKit (swift test)
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer && xcodebuild -version
+      - name: swift test
+        working-directory: ios/ApproverKit
+        run: swift test
+
+  # Known vulnerabilities in dependencies and the Go standard library. Not required: a newly published advisory should
+  # not block unrelated pull requests, but a red check here means a dependency or Go update is due.
+  govulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          check-latest: true
+      - run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+  ok:
+    name: CI ok
+    if: always()
+    needs: [go, docker, ios]
+    runs-on: ubuntu-latest
+    steps:
+      - name: all required jobs passed
+        run: |
+          echo '${{ toJSON(needs) }}'
+          [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped') }}" = false ]

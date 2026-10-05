@@ -14,7 +14,7 @@ ios/
 ## Build and test
 
 ```
-cd ios/ApproverKit && swift test          # protocol + interop with the Go side (testdata/interop)
+cd ios/ApproverKit && swift test          # protocol + interop with the Go side (internal/protocol/testdata/interop)
 cd ios && xcodegen generate               # writes Approver.xcodeproj
 xcodebuild -project Approver.xcodeproj -scheme Approver \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath build \

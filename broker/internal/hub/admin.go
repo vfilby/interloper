@@ -18,8 +18,8 @@ import (
 
 	"rsc.io/qr"
 
-	"warpgate-approver/broker/internal/audit"
-	"warpgate-approver/broker/internal/protocol"
+	"github.com/vfilby/interloper/internal/audit"
+	"github.com/vfilby/interloper/internal/protocol"
 )
 
 //go:embed templates/*.html

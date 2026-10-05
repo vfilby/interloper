@@ -1,6 +1,5 @@
 .claude/
-broker/hub-data/
-broker/adapter-data/
+bin/
 hub-data/
 adapter-data/
-deploy/adapter/wga-adapter
+adapters/warpgate/deploy/wga-adapter

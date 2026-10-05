@@ -46,7 +46,7 @@ for the Warpgate adapter, but the phase-1 broker's roles are now split:
                 └─────────────── hub (relay; management UI) ──────────────────
 ```
 
-- **Adapter** (`wga-adapter`, `broker/internal/adapter`):
+- **Adapter** (core: `adapter/`; adapters: `adapters/<service>/`; guide: [adapter/README.md](../adapter/README.md)):
   - A `Source` per service lists the service's pending items, re-reads one just before acting, and approves or
     denies it.
   - The adapter core does the rest:
@@ -57,7 +57,7 @@ for the Warpgate adapter, but the phase-1 broker's roles are now split:
     - denies anything unanswered (fails closed).
   - Sources built: `demo` (fake service, for tests) and `warpgate` (applies the phase-1 policy, then needs a device
     decision to approve).
-- **Hub** (`wga-hub`, `broker/internal/hub`):
+- **Hub** (`wga-hub`, `broker/`):
   - Stores ciphertexts, queues decisions, keeps acks, sends APNs wake-ups (generic text, no request content).
   - Bearer tokens get adapters and devices onto it; they are not a security boundary.
   - Management UI:
@@ -79,11 +79,11 @@ Where things run:
 
 | Check | Test |
 |---|---|
-| Go HPKE ↔ CryptoKit HPKE; Ed25519 and ES256 across languages | `testdata/interop`, `protocol` tests, `ApproverKit` tests |
-| Approve, then replay | `adapter` e2e tests |
-| Forged decisions (a device the adapter does not trust, an edited deny, a swapped approval) do nothing and leave the request pending | `adapter` e2e tests |
-| A request changed after it was shown is not acted on; it is re-sent | `adapter` e2e tests |
-| Unanswered → denied at the service; stale decision rejected; device removed from trust → its decisions do nothing | `adapter` e2e tests |
+| Go HPKE ↔ CryptoKit HPKE; Ed25519 and ES256 across languages | `internal/protocol/testdata/interop`, `protocol` tests, `ApproverKit` tests |
+| Approve, then replay | `broker/e2e` tests |
+| Forged decisions (a device the adapter does not trust, an edited deny, a swapped approval) do nothing and leave the request pending | `broker/e2e` tests |
+| A request changed after it was shown is not acted on; it is re-sent | `broker/e2e` tests |
+| Unanswered → denied at the service; stale decision rejected; device removed from trust → its decisions do nothing | `broker/e2e` tests |
 | Real binaries over HTTP, management UI form flows, CSRF refusal | `scripts/e2e-cli.sh` |
 | Real app in the simulator: enroll, approve with verified ack, high risk refuses a tap and needs a long press | `scripts/e2e-ui.sh` |
 
@@ -349,9 +349,11 @@ Status (2026-10-04):
 ## Layout
 
 ```
-broker/     Go: wga-hub, wga-adapter (Warpgate and demo sources, policy), wga-device, protocol, APNs
-ios/        Xcode project: app + Notification Service Extension
-infra/      CDK app (TypeScript), if option B is chosen: IoT Core policies, logging, Roles Anywhere, alarms
-deploy/     deployment files (adapter)
-docs/       this file, protocol spec (record/decision formats), runbooks
+ios/                Xcode project: app + ApproverKit
+broker/             Go: wga-hub (relay, management UI, APNs), wga-device (software phone), in-process e2e tests
+adapter/            Go: the adapter core and shared command line; the reference adapter (demo source); the adapter guide
+adapters/warpgate/  Go: the Warpgate adapter (source, policy, Warpgate API client) and its deploy files
+internal/           Go shared by hub and adapters: protocol (+ interop fixtures), audit, software device
+infra/              CDK app (TypeScript), if option B is chosen: IoT Core policies, logging, Roles Anywhere, alarms
+docs/               this file, protocol spec (record/decision formats), Docker setup, runbooks
 ```

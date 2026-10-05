@@ -1,12 +1,12 @@
 #!/bin/bash
-# End to end with the software device: hub + demo adapter + wga-device, over loopback HTTP.
+# End to end with the software device: hub + reference (demo) adapter + wga-device, over loopback HTTP.
 # Run from anywhere; builds the Go commands into a temp dir. Uses its own loopback ports 18740 (hub API), 18741 (management UI)
 # and 18749 (demo source), so it never touches a hub you are running on the default ports; it stops if they are busy.
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-S=$(mktemp -d -t wga-e2e)
+S=$(mktemp -d "${TMPDIR:-/tmp}/wga-e2e.XXXXXX")
 B="$S/bin"
-(cd "$ROOT/broker" && go build -o "$B/" ./cmd/...)
+(cd "$ROOT" && go build -o "$B/" ./broker/cmd/... ./adapter/cmd/...)
 cd "$S"
 echo "work dir: $S"
 for p in 18740 18741 18749; do
@@ -20,7 +20,7 @@ sleep 1
 curl -sf localhost:18740/healthz
 
 echo "== adapter key"
-"$B/wga-adapter" key -dir ad | tee key.txt
+"$B/wga-adapter-demo" key -dir ad | tee key.txt
 PUB=$(awk '/public key/ {print $3}' key.txt)
 
 echo "== register adapter via the management UI form"
@@ -44,10 +44,10 @@ ACCOUNT=$(awk '/account fingerprint/ {print $3}' enroll.txt)
 [ -n "$ACCOUNT" ] || { echo "no account fingerprint"; exit 1; }
 
 echo "== the adapter trusts vince (once; later phones need nothing here)"
-"$B/wga-adapter" trust add-user -dir ad vince "$ACCOUNT"
+"$B/wga-adapter-demo" trust add-user -dir ad vince "$ACCOUNT"
 
 echo "== run adapter (demo source)"
-"$B/wga-adapter" run -id demo -source demo -dir ad -hub http://127.0.0.1:18740 -poll 500ms -demo-listen 127.0.0.1:18749 > adapter.log 2>&1 &
+"$B/wga-adapter-demo" run -id demo -dir ad -hub http://127.0.0.1:18740 -poll 500ms -demo-listen 127.0.0.1:18749 > adapter.log 2>&1 &
 AD=$!
 sleep 1
 curl -sf localhost:18749/requests -d '{"requester":"helper","title":"helper wants ADMIN on web-02","risk":"high","reason":"rotate certs ‮evil","facts":[{"label":"Host","value":"web-02"},{"label":"Access","value":"ADMIN","level":"danger"}],"on_behalf_of":{"principal":"slack:U0123","display":"Kim","attested_by":"chatbot@agent-host"}}' >/dev/null
@@ -80,9 +80,17 @@ echo "== phone one removes phone two; phone two is no longer served"
 ("$B/wga-device" list -f dev2.json 2>&1 || true) | tail -1  # expected: refused
 
 echo "== service-side outcome"
-curl -sf localhost:18749/requests | python3 -c 'import json,sys; [print(e["item"]["key"], e["item"]["title"], "->", e.get("outcome")) for e in json.load(sys.stdin)]'
+curl -sf localhost:18749/requests | python3 -c '
+import json, sys
+got = {}
+for e in json.load(sys.stdin):
+    print(e["item"]["key"], e["item"]["title"], "->", e.get("outcome"))
+    got[e["item"]["key"]] = e.get("outcome")
+want = {"demo-1": "approved", "demo-2": "denied", "demo-3": "approved"}
+if got != want:
+    sys.exit(f"FAIL: outcomes {got}, want {want}")'
 echo "== adapter audit"
 cut -c1-200 ad/audit.jsonl
 sleep 1  # one adapter poll, so it has seen the removal
 echo "== adapter's view of vince"
-"$B/wga-adapter" trust list -dir ad
+"$B/wga-adapter-demo" trust list -dir ad
