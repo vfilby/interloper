@@ -10,10 +10,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/vfilby/interloper/adapter"
-	"github.com/vfilby/interloper/adapters/warpgate/policy"
-	"github.com/vfilby/interloper/adapters/warpgate/wgapi"
-	"github.com/vfilby/interloper/internal/protocol"
+	"github.com/vfilby/interpose/adapter"
+	"github.com/vfilby/interpose/adapters/warpgate/policy"
+	"github.com/vfilby/interpose/adapters/warpgate/wgapi"
+	"github.com/vfilby/interpose/internal/protocol"
 )
 
 // Warpgate is what the source needs from wgapi.Client.

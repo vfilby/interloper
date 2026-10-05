@@ -15,11 +15,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vfilby/interloper/adapter"
-	"github.com/vfilby/interloper/adapter/cli"
-	"github.com/vfilby/interloper/adapters/warpgate"
-	"github.com/vfilby/interloper/adapters/warpgate/policy"
-	"github.com/vfilby/interloper/adapters/warpgate/wgapi"
+	"github.com/vfilby/interpose/adapter"
+	"github.com/vfilby/interpose/adapter/cli"
+	"github.com/vfilby/interpose/adapters/warpgate"
+	"github.com/vfilby/interpose/adapters/warpgate/policy"
+	"github.com/vfilby/interpose/adapters/warpgate/wgapi"
 )
 
 func main() {

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vfilby/interloper/internal/protocol"
+	"github.com/vfilby/interpose/internal/protocol"
 )
 
 // HubClient is the adapter's side of the hub API. The token only gets it onto the hub; nothing it sends is

@@ -36,9 +36,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/vfilby/interloper/broker/internal/apns"
-	"github.com/vfilby/interloper/broker/internal/hub"
-	"github.com/vfilby/interloper/internal/audit"
+	"github.com/vfilby/interpose/broker/internal/apns"
+	"github.com/vfilby/interpose/broker/internal/hub"
+	"github.com/vfilby/interpose/internal/audit"
 )
 
 type config struct {

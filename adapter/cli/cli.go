@@ -26,9 +26,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/vfilby/interloper/adapter"
-	"github.com/vfilby/interloper/internal/audit"
-	"github.com/vfilby/interloper/internal/protocol"
+	"github.com/vfilby/interpose/adapter"
+	"github.com/vfilby/interpose/internal/audit"
+	"github.com/vfilby/interpose/internal/protocol"
 )
 
 // Source is one service an adapter binary can guard.

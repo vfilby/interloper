@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/vfilby/interloper/adapter"
-	"github.com/vfilby/interloper/internal/protocol"
+	"github.com/vfilby/interpose/adapter"
+	"github.com/vfilby/interpose/internal/protocol"
 )
 
 type entry struct {

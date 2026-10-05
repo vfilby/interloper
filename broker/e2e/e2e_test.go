@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vfilby/interloper/adapter"
-	"github.com/vfilby/interloper/adapter/demo"
-	"github.com/vfilby/interloper/broker/internal/hub"
-	"github.com/vfilby/interloper/internal/protocol"
-	"github.com/vfilby/interloper/internal/softdevice"
+	"github.com/vfilby/interpose/adapter"
+	"github.com/vfilby/interpose/adapter/demo"
+	"github.com/vfilby/interpose/broker/internal/hub"
+	"github.com/vfilby/interpose/internal/protocol"
+	"github.com/vfilby/interpose/internal/softdevice"
 )
 
 // world is a hub over real HTTP and one demo adapter that trusts user "vince", whose first device is "phone".

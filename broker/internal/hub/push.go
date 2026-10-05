@@ -6,8 +6,8 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/vfilby/interloper/broker/internal/apns"
-	"github.com/vfilby/interloper/internal/audit"
+	"github.com/vfilby/interpose/broker/internal/apns"
+	"github.com/vfilby/interpose/internal/audit"
 )
 
 // Pusher sends one wake-up to one device (apns.Client).
