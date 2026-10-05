@@ -18,7 +18,7 @@ dist: test
 	@shasum -a 256 deploy/broker
 
 # The Warpgate adapter for interloper (docs/runbooks/deploy-clearing-house.md). The hub is built on n from the
-# pinned commit (DockerStacks/interloper-hub).
+# pinned commit (DockerStacks/interpose-hub).
 dist-adapter: test
 	cd broker && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags='-s -w' -o ../deploy/adapter/wga-adapter ./cmd/wga-adapter
 	@shasum -a 256 deploy/adapter/wga-adapter

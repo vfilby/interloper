@@ -75,7 +75,7 @@ struct EnrollView: View {
     private var serverStep: some View {
         Group {
             Section {
-                TextField("approvals.home.example", text: $address)
+                TextField("interpose-hub.home.example", text: $address)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .keyboardType(.URL)

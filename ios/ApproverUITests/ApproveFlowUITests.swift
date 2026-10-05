@@ -14,7 +14,7 @@ final class ApproveFlowUITests: XCTestCase {
         app.launch()
 
         // Step 1: the Interloper server. Return submits, and the app checks the address is one (/app/hello).
-        let address = app.textFields["approvals.home.example"]
+        let address = app.textFields["interpose-hub.home.example"]
         XCTAssertTrue(address.waitForExistence(timeout: 10), "the app does not open on the server step")
         attach(app, "server-step")
         address.tap()
@@ -98,7 +98,7 @@ final class ApproveFlowUITests: XCTestCase {
         scrollTo(leave, in: app)
         leave.tap()
         app.buttons["Leave hub"].tap()
-        XCTAssertTrue(app.textFields["approvals.home.example"].waitForExistence(timeout: 5), "leaving did not return to the server step")
+        XCTAssertTrue(app.textFields["interpose-hub.home.example"].waitForExistence(timeout: 5), "leaving did not return to the server step")
         attach(app, "left-hub")
     }
 

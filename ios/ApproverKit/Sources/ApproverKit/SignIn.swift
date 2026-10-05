@@ -25,7 +25,7 @@ public enum SignIn {
         }
     }
 
-    /// The server's base URL for an address as typed: "approvals.home.example", "https://approvals.home.example/",
+    /// The server's base URL for an address as typed: "interpose-hub.home.example", "https://interpose-hub.home.example/",
     /// "http://127.0.0.1:18741". Scheme defaults to https; any path is dropped. Only http(s) with a host.
     public static func base(_ address: String) -> URL? {
         var s = address.trimmingCharacters(in: .whitespacesAndNewlines)
