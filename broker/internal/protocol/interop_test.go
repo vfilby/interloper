@@ -17,6 +17,11 @@ import (
 //	go-sealed.json      written here with WGA_WRITE_FIXTURE=1: a device's raw private keys, an adapter key and a
 //	                    sealed record. The app's tests open it with CryptoKit HPKE and verify the adapter signature.
 //	swift-decision.json written by the Swift side: a card and a decision on that record, signed by CryptoKit.
+//
+// To regenerate all four, in this order (the Swift roster test signs with the keys in go-sealed.json):
+//	WGA_WRITE_FIXTURE=1 go test -run TestWriteGo ./internal/protocol     (go-sealed.json, go-roster.json)
+//	cd ios/ApproverKit && WGA_WRITE_FIXTURE=1 swift test                    (swift-decision.json, swift-roster.json)
+//	go test ./internal/protocol                                             (checks the Swift files)
 //	                    TestSwiftDecision verifies it here.
 //
 // The private keys in go-sealed.json are test keys and nothing else.
@@ -49,10 +54,10 @@ func TestWriteGoSealed(t *testing.T) {
 	ce, _ := dev.Card(now)
 	adPub, adKey, _ := ed25519.GenerateKey(nil)
 	rec := protocol.Record{V: 1, ID: "interop-1", Adapter: "demo", Kind: "demo.test", Shape: protocol.ShapeLease,
-		Risk: protocol.RiskHigh, Title: "claude wants ADMIN on forge-01", Requester: "claude",
-		OnBehalfOf: &protocol.Principal{Principal: "slack:U0123", Display: "Kim", AttestedBy: "nanoclaw@drones"},
-		Facts:      []protocol.Fact{{Label: "Host", Value: "forge-01"}, {Label: "Tier", Value: "ADMIN", Level: "danger"}},
-		Reason:     "rotate the “certs”‮ — with unicode", Lease: &protocol.Lease{DurationS: 7200, Scope: "forge-01-admin"},
+		Risk: protocol.RiskHigh, Title: "claude wants ADMIN on db-01", Requester: "claude",
+		OnBehalfOf: &protocol.Principal{Principal: "slack:U0123", Display: "Kim", AttestedBy: "chatbot@agent-host"},
+		Facts:      []protocol.Fact{{Label: "Host", Value: "db-01"}, {Label: "Tier", Value: "ADMIN", Level: "danger"}},
+		Reason:     "rotate the “certs”‮ — with unicode", Lease: &protocol.Lease{DurationS: 7200, Scope: "db-01-admin"},
 		CreatedAt: now.Unix(), ExpiresAt: now.Add(10 * 365 * 24 * time.Hour).Unix(), Nonce: protocol.NewNonce()}
 	signed, _ := protocol.SignEd25519(adKey, "demo", rec)
 	box, err := protocol.Seal(nil, dev.ID(), dev.Enc.PublicKey().Bytes(), signed)

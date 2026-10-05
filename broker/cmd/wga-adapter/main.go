@@ -253,10 +253,13 @@ func warpgateSource() (*wgsource.Source, error) {
 		return nil, err
 	}
 	reqs := map[string]bool{}
-	for _, r := range strings.Split(get("ALLOWED_REQUESTERS", "claude,maggy"), ",") {
+	for _, r := range strings.Split(get("ALLOWED_REQUESTERS", ""), ",") {
 		if r = strings.TrimSpace(r); r != "" {
 			reqs[r] = true
 		}
+	}
+	if len(reqs) == 0 {
+		return nil, errors.New("ALLOWED_REQUESTERS is required: the Warpgate usernames that may ask for tickets, comma-separated")
 	}
 	return &wgsource.Source{
 		WG: warpgate.New(base, strings.TrimSpace(string(tok)), nil),

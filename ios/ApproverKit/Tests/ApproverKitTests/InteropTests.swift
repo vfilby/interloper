@@ -18,7 +18,7 @@ final class InteropTests: XCTestCase {
         var now: Int64
     }
 
-    struct SwiftDecision: Decodable {
+    struct SwiftDecision: Codable {
         var card: Envelope
         var decision: Envelope
     }
@@ -49,9 +49,9 @@ final class InteropTests: XCTestCase {
         let (g, dev, pinned, listing) = try fixture()
         let opened = try dev.open(listing, pinned: pinned)
         XCTAssertEqual(B64.encode(opened.payload), g.recordPayload)
-        XCTAssertEqual(opened.record.title, "claude wants ADMIN on forge-01")
+        XCTAssertEqual(opened.record.title, "claude wants ADMIN on db-01")
         XCTAssertTrue(opened.record.isHighRisk)
-        XCTAssertEqual(opened.record.onBehalfOf?.attestedBy, "nanoclaw@drones")
+        XCTAssertEqual(opened.record.onBehalfOf?.attestedBy, "chatbot@agent-host")
         XCTAssertEqual(opened.record.facts?.last?.level, "danger")
         XCTAssertEqual(opened.record.lease?.durationS, 7200)
     }
@@ -83,6 +83,19 @@ final class InteropTests: XCTestCase {
         XCTAssertEqual(card.deviceId, goCard.deviceId)
         XCTAssertEqual(card.encKey, goCard.encKey)
         XCTAssertEqual(ours.kid, card.deviceId)
+    }
+
+    /// Rewrites swift-decision.json (a CryptoKit-signed card and approval for the Go record), for Go's
+    /// TestSwiftDecision. Run after the Go side rewrote go-sealed.json: WGA_WRITE_FIXTURE=1 swift test.
+    func testWriteSwiftDecision() throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["WGA_WRITE_FIXTURE"] == "1",
+                          "set WGA_WRITE_FIXTURE=1 to rewrite testdata/interop/swift-decision.json")
+        let (g, dev, pinned, listing) = try fixture()
+        let opened = try dev.open(listing, pinned: pinned)
+        // Made at the record's own time, so Go can judge it then, however old the fixture is.
+        let at = Date(timeIntervalSince1970: TimeInterval(g.now + 60))
+        let out = SwiftDecision(card: try dev.card(name: "swift fixture"), decision: try dev.decide(opened, approve: true, now: at))
+        try (Coders.encoder.encode(out) + Data("\n".utf8)).write(to: Self.interopDir.appendingPathComponent("swift-decision.json"))
     }
 
     func testSwiftDecisionFixtureCard() throws {

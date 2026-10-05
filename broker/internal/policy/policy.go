@@ -15,7 +15,7 @@ const (
 )
 
 type Policy struct {
-	Requesters  map[string]bool        // Warpgate usernames allowed to ask (claude, maggy)
+	Requesters  map[string]bool        // Warpgate usernames allowed to ask (claude, helper)
 	MaxDuration map[Tier]time.Duration // Warpgate's approve cannot shorten a ticket, so longer asks are denied
 	TTL         time.Duration          // unanswered longer than this: denied
 }
@@ -35,7 +35,7 @@ type Verdict struct {
 	Tier   Tier   // "" when the target is not a ticket tier
 }
 
-// SplitTarget splits "forge-01-admin" into ("forge-01", admin). ok is false for anything but *-rw / *-admin.
+// SplitTarget splits "db-01-admin" into ("db-01", admin). ok is false for anything but *-rw / *-admin.
 func SplitTarget(name string) (host string, tier Tier, ok bool) {
 	for _, t := range []Tier{TierAdmin, TierRW} {
 		if h, found := strings.CutSuffix(name, "-"+string(t)); found && h != "" {

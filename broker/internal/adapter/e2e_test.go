@@ -207,8 +207,8 @@ func (w *world) openOne(d *softdevice.Device, c *softdevice.Client, title string
 
 func TestApproveEndToEnd(t *testing.T) {
 	w := newWorld(t)
-	it := w.src.Add(adapter.Item{Requester: "claude", Title: "claude wants RW on forge-01", Risk: protocol.RiskElevated,
-		Reason: "fix the backups", Facts: []protocol.Fact{{Label: "Host", Value: "forge-01"}}})
+	it := w.src.Add(adapter.Item{Requester: "claude", Title: "claude wants RW on db-01", Risk: protocol.RiskElevated,
+		Reason: "fix the backups", Facts: []protocol.Fact{{Label: "Host", Value: "db-01"}}})
 	w.tick()
 
 	if n := len(w.pending(w.strHub)); n != 0 {
@@ -255,7 +255,7 @@ func TestApproveEndToEnd(t *testing.T) {
 // The hub (or anything that gets onto it) forges approvals: none of them may act.
 func TestForgedDecisionsDoNothing(t *testing.T) {
 	w := newWorld(t)
-	it, o := w.openOne(w.phone, w.phoneHub, "maggy wants ADMIN on n")
+	it, o := w.openOne(w.phone, w.phoneHub, "helper wants ADMIN on web-02")
 
 	// 1. A device of another user (enrolled at the hub, not trusted by the adapter), signing the real record.
 	strDec, _ := w.stranger.Decide(o, protocol.Approve, w.clock())

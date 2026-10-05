@@ -25,7 +25,7 @@ func TestClient(t *testing.T) {
 		case "GET /@warpgate/admin/api/users":
 			io.WriteString(w, `[{"id":"u1","username":"claude","description":"x"}]`)
 		case "GET /@warpgate/admin/api/targets":
-			io.WriteString(w, `[{"id":"t1","name":"forge-01-rw","options":{}}]`)
+			io.WriteString(w, `[{"id":"t1","name":"db-01-rw","options":{}}]`)
 		case "POST /@warpgate/admin/api/ticket-requests/r1/deny":
 			json.NewDecoder(r.Body).Decode(&denyBody)
 			io.WriteString(w, `{}`)
@@ -49,7 +49,7 @@ func TestClient(t *testing.T) {
 	if u, err := c.Usernames(ctx); err != nil || u["u1"] != "claude" {
 		t.Fatalf("Usernames = %v, %v", u, err)
 	}
-	if tg, err := c.TargetNames(ctx); err != nil || tg["t1"] != "forge-01-rw" {
+	if tg, err := c.TargetNames(ctx); err != nil || tg["t1"] != "db-01-rw" {
 		t.Fatalf("TargetNames = %v, %v", tg, err)
 	}
 	if err := c.Deny(ctx, "r1", "because"); err != nil || denyBody["reason"] != "because" {

@@ -8,7 +8,7 @@ import (
 func TestEvaluate(t *testing.T) {
 	now := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
 	p := Policy{
-		Requesters:  map[string]bool{"claude": true, "maggy": true},
+		Requesters:  map[string]bool{"claude": true, "helper": true},
 		MaxDuration: map[Tier]time.Duration{TierRW: 2 * time.Hour, TierAdmin: 30 * time.Minute},
 		TTL:         15 * time.Minute,
 	}
@@ -21,10 +21,10 @@ func TestEvaluate(t *testing.T) {
 		host   string
 		tier   Tier
 	}{
-		{"ok rw", Request{"claude", "forge-01-rw", dur(2 * time.Hour), now}, false, "", "forge-01", TierRW},
-		{"ok admin", Request{"maggy", "home-admin", dur(30 * time.Minute), now.Add(-14 * time.Minute)}, false, "", "home", TierAdmin},
+		{"ok rw", Request{"claude", "db-01-rw", dur(2 * time.Hour), now}, false, "", "db-01", TierRW},
+		{"ok admin", Request{"helper", "home-admin", dur(30 * time.Minute), now.Add(-14 * time.Minute)}, false, "", "home", TierAdmin},
 		{"unknown user", Request{"", "home-rw", dur(time.Hour), now}, true, "requester is not a Warpgate user", "home", TierRW},
-		{"not allowed", Request{"jeeves", "home-rw", dur(time.Hour), now}, true, "jeeves may not ask for tickets", "home", TierRW},
+		{"not allowed", Request{"intruder", "home-rw", dur(time.Hour), now}, true, "intruder may not ask for tickets", "home", TierRW},
 		{"unknown target", Request{"claude", "", dur(time.Hour), now}, true, "target is not a Warpgate target", "", ""},
 		{"ro tier", Request{"claude", "home-ro", dur(time.Hour), now}, true, "home-ro is not an rw or admin tier", "home-ro", ""},
 		{"own target", Request{"claude", "home", dur(time.Hour), now}, true, "home is not an rw or admin tier", "home", ""},

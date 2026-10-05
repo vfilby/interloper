@@ -3,7 +3,7 @@ import XCTest
 /// Drives the real app against a live hub and demo adapter (see ios/README.md, "End-to-end UI test").
 /// The hub's management UI comes from the environment: `TEST_RUNNER_WGA_ADMIN_URL=http://127.0.0.1:18741` on
 /// xcodebuild. The hub runs without OIDC (local mode), so phone sign-in answers at once for `?user=vince`.
-/// Expects one normal-risk request titled "claude wants RW on forge-01" and one high-risk "maggy wants ADMIN on n".
+/// Expects one normal-risk request titled "claude wants RW on db-01" and one high-risk "helper wants ADMIN on web-02".
 final class ApproveFlowUITests: XCTestCase {
     func testEnrollApproveAndHoldToApprove() throws {
         guard let admin = ProcessInfo.processInfo.environment["WGA_ADMIN_URL"], !admin.isEmpty else {
@@ -48,7 +48,7 @@ final class ApproveFlowUITests: XCTestCase {
         done.tap()
 
         // Normal risk: a plain Approve.
-        let rw = app.staticTexts["claude wants RW on forge-01"]
+        let rw = app.staticTexts["claude wants RW on db-01"]
         XCTAssertTrue(rw.waitForExistence(timeout: 20), "request not in the inbox")
         attach(app, "inbox")
         rw.tap()
@@ -59,7 +59,7 @@ final class ApproveFlowUITests: XCTestCase {
         app.navigationBars.buttons.element(boundBy: 0).tap()
 
         // High risk: a tap is not enough; a long press is.
-        let adminRequest = app.staticTexts["maggy wants ADMIN on n"]
+        let adminRequest = app.staticTexts["helper wants ADMIN on web-02"]
         XCTAssertTrue(adminRequest.waitForExistence(timeout: 10))
         adminRequest.tap()
         attach(app, "detail-high")

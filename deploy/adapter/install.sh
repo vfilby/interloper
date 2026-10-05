@@ -14,7 +14,7 @@ DEST=/opt/interpose-adapter
 CUID=65533 # the container's user (compose.yaml)
 HERE=$(cd "$(dirname "$0")" && pwd)
 SVC=adapter-warpgate
-tok='' htok='' user='' afp='' # filled in by ask
+tok='' htok='' user='' afp='' reqs='' # filled in by ask
 
 if [ -t 1 ]; then B=$'\e[1m'; G=$'\e[32m'; Y=$'\e[33m'; R=$'\e[31m'; N=$'\e[0m'; else B='' G='' Y='' R='' N=''; fi
 step() { printf '\n%s== %s%s\n' "$B" "$*" "$N"; }
@@ -78,6 +78,13 @@ if [[ $hub == *home.example* || -z $hub || $wg == *home.example* || -z $wg ]]; t
   ask hub "Hub URL:      " '^https://[A-Za-z0-9.-]+(:[0-9]+)?/?$'
   ask wg  "Warpgate URL: " '^https://[A-Za-z0-9.-]+(:[0-9]+)?/?$'
   sed -i -e "s#^HUB_URL=.*#HUB_URL=${hub%/}#" -e "s#^WARPGATE_URL=.*#WARPGATE_URL=${wg%/}#" "$DEST/.env"
+fi
+if [ -z "$(envget ALLOWED_REQUESTERS)" ]; then
+  yourturn "who may ask" \
+    "The Warpgate usernames whose ticket requests go to the phone, comma-separated (e.g. claude,helper)." \
+    "Anyone else's requests are denied by the adapter's policy."
+  ask reqs "Allowed requesters: " '^[A-Za-z0-9._-]+(,[A-Za-z0-9._-]+)*$'
+  sed -i "s#^ALLOWED_REQUESTERS=.*#ALLOWED_REQUESTERS=$reqs#" "$DEST/.env"
 fi
 hub=$(envget HUB_URL); wg=$(envget WARPGATE_URL)
 ok "settings in $DEST/.env (hub $hub, Warpgate $wg)"
