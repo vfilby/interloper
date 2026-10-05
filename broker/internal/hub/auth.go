@@ -16,7 +16,7 @@ import (
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
 
-	"warpgate-approver/broker/internal/protocol"
+	"github.com/vfilby/interloper/internal/protocol"
 )
 
 // Identity is who is using the management UI.

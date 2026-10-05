@@ -7,9 +7,9 @@
 # there by hand is lost.
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-S=$(mktemp -d -t wga-e2e)
+S=$(mktemp -d "${TMPDIR:-/tmp}/wga-e2e.XXXXXX")
 B="$S/bin"
-(cd "$ROOT/broker" && go build -o "$B/" ./cmd/...)
+(cd "$ROOT" && go build -o "$B/" ./broker/cmd/... ./adapter/cmd/...)
 cd "$S"
 echo "work dir: $S"
 for p in 18740 18741 18749; do
@@ -25,11 +25,11 @@ HUB=$!
 trap 'kill $HUB ${AD:-} ${XT:-} 2>/dev/null || true' EXIT
 sleep 1
 curl -sf localhost:18740/healthz >/dev/null || { echo "test hub did not start:"; cat hub.log; exit 1; }
-"$B/wga-adapter" key -dir ad > key.txt
+"$B/wga-adapter-demo" key -dir ad > key.txt
 PUB=$(awk '/public key/ {print $3}' key.txt)
 curl -sf -X POST localhost:18741/adapters -H 'Sec-Fetch-Site: same-origin' --data-urlencode id=demo --data-urlencode "key=$PUB" \
   | sed -n -E 's/.*<p class="token">([^<]+)<\/p>.*/\1/p' > ad/hub-token
-"$B/wga-adapter" run -id demo -source demo -dir ad -hub http://127.0.0.1:18740 -poll 500ms -demo-listen 127.0.0.1:18749 > adapter.log 2>&1 &
+"$B/wga-adapter-demo" run -id demo -dir ad -hub http://127.0.0.1:18740 -poll 500ms -demo-listen 127.0.0.1:18749 > adapter.log 2>&1 &
 AD=$!
 sleep 1
 curl -sf localhost:18749/requests -d '{"requester":"claude","title":"claude wants RW on db-01","risk":"elevated","reason":"fix the backups","facts":[{"label":"Host","value":"db-01"},{"label":"Access","value":"RW","level":"warn"},{"label":"Duration","value":"2h"}]}' >/dev/null
@@ -61,7 +61,7 @@ for i in $(seq 1 120); do
   sleep 1
 done
 [ -n "$ACCOUNT" ] || { echo "app never enrolled"; tail -30 xcodebuild.log; exit 1; }
-"$B/wga-adapter" trust add-user -dir ad vince "$ACCOUNT"
+"$B/wga-adapter-demo" trust add-user -dir ad vince "$ACCOUNT"
 
 wait $XT && echo "UI TEST PASSED" || { echo "UI TEST FAILED"; grep -E "error|fail|XCT" xcodebuild.log | head -30; }
 echo "== service-side outcome"

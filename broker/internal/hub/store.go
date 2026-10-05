@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"warpgate-approver/broker/internal/protocol"
+	"github.com/vfilby/interloper/internal/protocol"
 )
 
 // Bounds. The hub is reachable by every adapter and device; nothing it keeps may grow without limit.

@@ -3,7 +3,7 @@ import Foundation
 import XCTest
 @testable import ApproverKit
 
-/// Rosters: interop with Go (testdata/interop/go-roster.json, swift-roster.json) and the same attack cases as
+/// Rosters: interop with Go (internal/protocol/testdata/interop/go-roster.json, swift-roster.json) and the same attack cases as
 /// broker/internal/protocol/roster_test.go.
 final class RosterTests: XCTestCase {
     struct GoRoster: Decodable {
@@ -46,9 +46,11 @@ final class RosterTests: XCTestCase {
         let chain = g.chain + [r3]
         XCTAssertNoThrow(try verifyChain(chain, user: g.user, account: g.account))
 
-        // For Go's TestSwiftRoster.
-        let out = try Coders.encoder.encode(["chain": chain])
-        try out.write(to: InteropTests.interopDir.appendingPathComponent("swift-roster.json"))
+        // For Go's TestSwiftRoster; rewritten only on request, like swift-decision.json.
+        if ProcessInfo.processInfo.environment["WGA_WRITE_FIXTURE"] == "1" {
+            let out = try Coders.encoder.encode(["chain": chain])
+            try out.write(to: InteropTests.interopDir.appendingPathComponent("swift-roster.json"))
+        }
     }
 
     func testAccountFingerprintShape() throws {
