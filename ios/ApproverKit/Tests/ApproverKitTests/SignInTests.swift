@@ -8,7 +8,7 @@ final class SignInTests: XCTestCase {
         XCTAssertEqual(SignIn.base("http://127.0.0.1:18741")?.absoluteString, "http://127.0.0.1:18741")
         XCTAssertEqual(SignIn.base("HTTPS://user:pw@interpose-hub.home.example")?.absoluteString, "https://interpose-hub.home.example")
         XCTAssertNil(SignIn.base(""))
-        XCTAssertNil(SignIn.base("wga://enroll?code=x"))
+        XCTAssertNil(SignIn.base("interpose://enroll?code=x"))
         XCTAssertNil(SignIn.base("javascript:alert(1)"))
         XCTAssertNil(SignIn.base("https://"))
     }

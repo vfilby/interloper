@@ -59,7 +59,7 @@ jobs:
         run: docker build -f broker/Dockerfile -t interpose-hub:ci .
       - name: Warpgate adapter image
         run: |
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o adapters/warpgate/deploy/wga-adapter ./adapters/warpgate/cmd/wga-adapter
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o adapters/warpgate/deploy/interpose-adapter ./adapters/warpgate/cmd/interpose-adapter
           docker build -t interpose-adapter:ci adapters/warpgate/deploy
       - name: compose file
         working-directory: adapters/warpgate/deploy

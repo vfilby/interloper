@@ -21,16 +21,16 @@ struct ApproverApp: App {
                     }
                 }
                 #if DEBUG && targetEnvironment(simulator)
-                // UI tests: `-wgaReset` starts from nothing (the simulator keychain outlives an uninstall, so a previous
-                // run's enrollment would linger); `-wgaAutoEnroll <link>` also enrolls without a tap. Simulator debug
-                // builds only.
+                // UI tests: `-interposeReset` starts from nothing (the simulator keychain outlives an uninstall, so a
+                // previous run's enrollment would linger); `-interposeAutoEnroll <link>` also enrolls without a tap.
+                // Simulator debug builds only.
                 .task {
                     let args = ProcessInfo.processInfo.arguments
-                    if args.contains("-wgaReset") {
+                    if args.contains("-interposeReset") {
                         model.forgetLocally(deleteKeys: true)
                         UserDefaults.standard.removeObject(forKey: "signInAddress")
                     }
-                    if let i = args.firstIndex(of: "-wgaAutoEnroll"), i + 1 < args.count, let link = EnrollmentLink(args[i + 1]) {
+                    if let i = args.firstIndex(of: "-interposeAutoEnroll"), i + 1 < args.count, let link = EnrollmentLink(args[i + 1]) {
                         model.forgetLocally(deleteKeys: true)
                         await model.enroll(link, name: "Simulator UI test", pin: nil)
                     }

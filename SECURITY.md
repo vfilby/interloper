@@ -48,7 +48,8 @@ What enforces that:
   against a live Warpgate (it is tested through the client's request shapes).
 - No account recovery key yet: an account whose every phone is lost must be enrolled again and re-trusted at each
   adapter.
-- `wga-device` (the software phone) keeps its keys in a file. It exists for tests; never trust it on a real adapter.
+- `interpose-device` (the software phone) keeps its keys in a file. It exists for tests; never trust it on a real
+  adapter.
 
 ## Operating it safely
 

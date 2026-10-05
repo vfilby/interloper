@@ -110,7 +110,7 @@ public func verifyES256(_ env: Envelope, x963: Data) throws -> Data {
     return payload
 }
 
-/// `wga://enroll?hub=<url>&code=<code>&user=<id>&mode=new|join`
+/// `interpose://enroll?hub=<url>&code=<code>&user=<id>&mode=new|join`
 public struct EnrollmentLink: Equatable, Sendable {
     public enum Mode: String, Sendable { case new, join }
 
@@ -134,7 +134,7 @@ public struct EnrollmentLink: Equatable, Sendable {
 
     public init(parsing s: String) throws {
         guard let c = URLComponents(string: s.trimmingCharacters(in: .whitespacesAndNewlines)),
-              c.scheme == "wga", c.host == "enroll",
+              c.scheme == "interpose", c.host == "enroll",
               let hubS = c.queryItems?.first(where: { $0.name == "hub" })?.value,
               let hub = URL(string: hubS), let scheme = hub.scheme, ["http", "https"].contains(scheme),
               let code = c.queryItems?.first(where: { $0.name == "code" })?.value, !code.isEmpty

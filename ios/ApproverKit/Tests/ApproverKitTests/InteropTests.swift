@@ -86,10 +86,10 @@ final class InteropTests: XCTestCase {
     }
 
     /// Rewrites swift-decision.json (a CryptoKit-signed card and approval for the Go record), for Go's
-    /// TestSwiftDecision. Run after the Go side rewrote go-sealed.json: WGA_WRITE_FIXTURE=1 swift test.
+    /// TestSwiftDecision. Run after the Go side rewrote go-sealed.json: INTERPOSE_WRITE_FIXTURE=1 swift test.
     func testWriteSwiftDecision() throws {
-        try XCTSkipUnless(ProcessInfo.processInfo.environment["WGA_WRITE_FIXTURE"] == "1",
-                          "set WGA_WRITE_FIXTURE=1 to rewrite internal/protocol/testdata/interop/swift-decision.json")
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["INTERPOSE_WRITE_FIXTURE"] == "1",
+                          "set INTERPOSE_WRITE_FIXTURE=1 to rewrite internal/protocol/testdata/interop/swift-decision.json")
         let (g, dev, pinned, listing) = try fixture()
         let opened = try dev.open(listing, pinned: pinned)
         // Made at the record's own time, so Go can judge it then, however old the fixture is.
@@ -149,18 +149,18 @@ final class InteropTests: XCTestCase {
     }
 
     func testEnrollmentLink() throws {
-        let l = EnrollmentLink("wga://enroll?hub=http%3A%2F%2F127.0.0.1%3A8740&code=ABC123&user=vince&mode=join")
+        let l = EnrollmentLink("interpose://enroll?hub=http%3A%2F%2F127.0.0.1%3A8740&code=ABC123&user=vince&mode=join")
         XCTAssertEqual(l?.hub.absoluteString, "http://127.0.0.1:8740")
         XCTAssertEqual(l?.code, "ABC123")
         XCTAssertEqual(l?.user, "vince")
         XCTAssertEqual(l?.mode, .join)
         XCTAssertNil(EnrollmentLink("https://evil/enroll?hub=x&code=y&user=v&mode=new"))
-        XCTAssertNil(EnrollmentLink("wga://enroll?hub=file%3A%2F%2F%2Fetc&code=y&user=v&mode=new"))
-        XCTAssertThrowsError(try EnrollmentLink(parsing: "wga://enroll?hub=http%3A%2F%2Fh&code=ABC")) { err in
+        XCTAssertNil(EnrollmentLink("interpose://enroll?hub=file%3A%2F%2F%2Fetc&code=y&user=v&mode=new"))
+        XCTAssertThrowsError(try EnrollmentLink(parsing: "interpose://enroll?hub=http%3A%2F%2Fh&code=ABC")) { err in
             XCTAssertEqual(err as? EnrollmentLink.LinkError, .old)
         }
-        XCTAssertNil(EnrollmentLink("wga://enroll?hub=http%3A%2F%2Fh&code=ABC&user=Vince&mode=new"), "user ids are lower-case")
-        XCTAssertNil(EnrollmentLink("wga://enroll?hub=http%3A%2F%2Fh&code=ABC&user=v&mode=admin"))
+        XCTAssertNil(EnrollmentLink("interpose://enroll?hub=http%3A%2F%2Fh&code=ABC&user=Vince&mode=new"), "user ids are lower-case")
+        XCTAssertNil(EnrollmentLink("interpose://enroll?hub=http%3A%2F%2Fh&code=ABC&user=v&mode=admin"))
     }
 
     func testFingerprint() {

@@ -29,7 +29,7 @@ const (
 const SuiteHPKE = "hpke-p256-sha256-aes256gcm"
 
 // HPKEInfo is the info string bound into every sealed record.
-var HPKEInfo = []byte("wga/v1/record")
+var HPKEInfo = []byte("interpose/v1/record")
 
 var (
 	kemSuite  = cat([]byte("KEM"), i2osp(kemID, 2))

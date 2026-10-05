@@ -10,7 +10,7 @@ This directory holds:
 adapter/                    the adapter core (Go package adapter): records, sealing, trust, decisions, acks, state
 adapter/cli/                the command line every adapter binary shares: key, trust, run
 adapter/demo/               the demo Source: a fake service fed over loopback HTTP
-adapter/cmd/wga-adapter-demo/  the reference adapter: cli.Main + the demo Source
+adapter/cmd/interpose-adapter-demo/  the reference adapter: cli.Main + the demo Source
 ```
 
 Real adapters live in [`../adapters/`](../adapters/), one directory each.
@@ -65,11 +65,11 @@ type Source interface {
   or an empty list that closes open requests.
 
 Then a `main` that hands the source to the shared command line, as the reference adapter does
-([`cmd/wga-adapter-demo/main.go`](cmd/wga-adapter-demo/main.go)):
+([`cmd/interpose-adapter-demo/main.go`](cmd/interpose-adapter-demo/main.go)):
 
 ```go
 func main() {
-	cli.Main("wga-adapter-mysvc", cli.Source{Name: "mysvc", Flags: func(fs *flag.FlagSet) func(context.Context, *slog.Logger) (adapter.Source, error) {
+	cli.Main("interpose-adapter-mysvc", cli.Source{Name: "mysvc", Flags: func(fs *flag.FlagSet) func(context.Context, *slog.Logger) (adapter.Source, error) {
 		url := fs.String("mysvc-url", "", "the service's API base URL")
 		return func(ctx context.Context, log *slog.Logger) (adapter.Source, error) { return mysvc.New(*url) }
 	}})
@@ -79,10 +79,10 @@ func main() {
 That gives the binary the same commands as every other adapter:
 
 ```
-wga-adapter-mysvc key                          # make the signing key; prints the public key to register at the hub
-wga-adapter-mysvc trust add-user USER ACCOUNT  # trust a user (account fingerprint read off their phone)
-wga-adapter-mysvc trust list | remove-user USER
-wga-adapter-mysvc run -id mysvc -hub https://hub.example [source flags]
+interpose-adapter-mysvc key                          # make the signing key; prints the public key to register at the hub
+interpose-adapter-mysvc trust add-user USER ACCOUNT  # trust a user (account fingerprint read off their phone)
+interpose-adapter-mysvc trust list | remove-user USER
+interpose-adapter-mysvc run -id mysvc -hub https://hub.example [source flags]
 ```
 
 The adapter directory (`-dir`, default `adapter-data`) holds `signing.key`, `hub-token` (from the hub's management UI),
@@ -125,13 +125,13 @@ test against. Everything in "What an adapter is responsible for" still applies.
 make e2e    # a hub, the reference adapter and software phones on loopback: enroll, approve, deny, join, remove
 ```
 
-Or by hand: run `wga-hub` locally (`broker/README.md`), then
+Or by hand: run `interpose-hub` locally (`broker/README.md`), then
 
 ```
 go build -o bin/ ./broker/cmd/... ./adapter/cmd/...
-bin/wga-adapter-demo key                        # register the public key at http://127.0.0.1:8741/adapters, id demo
+bin/interpose-adapter-demo key                        # register the public key at http://127.0.0.1:8741/adapters, id demo
 echo '<token from the hub>' > adapter-data/hub-token
-bin/wga-adapter-demo trust add-user vince '<account fingerprint from the phone>'
-bin/wga-adapter-demo run -id demo
+bin/interpose-adapter-demo trust add-user vince '<account fingerprint from the phone>'
+bin/interpose-adapter-demo run -id demo
 curl localhost:8749/requests -d '{"requester":"claude","title":"claude wants RW on db-01","risk":"elevated","reason":"fix backups"}'
 ```

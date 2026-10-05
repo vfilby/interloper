@@ -1,6 +1,6 @@
-// Command wga-adapter is the Warpgate adapter: the shared adapter command line (adapter/cli, `wga-adapter key | trust
-// | run`) with the Warpgate Source. It runs beside Warpgate and holds a Warpgate token that can approve and deny
-// ticket requests.
+// Command interpose-adapter is the Warpgate adapter: the shared adapter command line (adapter/cli, `interpose-adapter
+// key | trust | run`) with the Warpgate Source. It runs beside Warpgate and holds a Warpgate token that can approve and
+// deny ticket requests.
 //
 // Warpgate settings come from the environment: WARPGATE_URL, WARPGATE_TOKEN_FILE, ALLOWED_REQUESTERS,
 // MAX_DURATION_RW, MAX_DURATION_ADMIN, REQUEST_TTL (deploy/adapter.env.default describes each).
@@ -23,7 +23,7 @@ import (
 )
 
 func main() {
-	cli.Main("wga-adapter", cli.Source{Name: "warpgate", Flags: func(*flag.FlagSet) func(context.Context, *slog.Logger) (adapter.Source, error) {
+	cli.Main("interpose-adapter", cli.Source{Name: "warpgate", Flags: func(*flag.FlagSet) func(context.Context, *slog.Logger) (adapter.Source, error) {
 		return func(context.Context, *slog.Logger) (adapter.Source, error) { return warpgateSource() }
 	}})
 }

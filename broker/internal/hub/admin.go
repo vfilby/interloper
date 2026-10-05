@@ -225,7 +225,7 @@ func (a *Admin) issue(user, mode, via string) (id, link string, err error) {
 	if err != nil {
 		return "", "", err
 	}
-	link = "wga://enroll?hub=" + url.QueryEscape(a.HubURL) + "&code=" + url.QueryEscape(code) +
+	link = "interpose://enroll?hub=" + url.QueryEscape(a.HubURL) + "&code=" + url.QueryEscape(code) +
 		"&user=" + url.QueryEscape(user) + "&mode=" + mode
 	a.linksMu.Lock()
 	if a.links == nil {
@@ -266,9 +266,9 @@ func (a *Admin) appHello(w http.ResponseWriter, _ *http.Request) {
 }
 
 // appEnroll is phone sign-in: the app opens it in a private browser session, the person signs in, and the hub
-// answers with an enrollment link for them (wga://enroll?…), which the app catches. New user if they have no account
-// yet, otherwise a join that one of their existing phones must approve. In local mode (no sign-in) the user comes
-// from ?user=.
+// answers with an enrollment link for them (interpose://enroll?…), which the app catches. New user if they have no
+// account yet, otherwise a join that one of their existing phones must approve. In local mode (no sign-in) the user
+// comes from ?user=.
 //
 // It is a GET with an effect (a code is issued) so that it works as a sign-in redirect target. A forged visit
 // can only hand a code for the victim's own account to the victim's own app, and that code adds nothing until the

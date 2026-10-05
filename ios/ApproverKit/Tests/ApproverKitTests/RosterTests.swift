@@ -47,7 +47,7 @@ final class RosterTests: XCTestCase {
         XCTAssertNoThrow(try verifyChain(chain, user: g.user, account: g.account))
 
         // For Go's TestSwiftRoster; rewritten only on request, like swift-decision.json.
-        if ProcessInfo.processInfo.environment["WGA_WRITE_FIXTURE"] == "1" {
+        if ProcessInfo.processInfo.environment["INTERPOSE_WRITE_FIXTURE"] == "1" {
             let out = try Coders.encoder.encode(["chain": chain])
             try out.write(to: InteropTests.interopDir.appendingPathComponent("swift-roster.json"))
         }

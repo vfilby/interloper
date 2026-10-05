@@ -1,16 +1,16 @@
-// Command wga-device is a software stand-in for the iPhone, for testing the hub and adapters on a LAN without the
+// Command interpose-device is a software stand-in for the iPhone, for testing the hub and adapters on a LAN without the
 // app. Its private keys are in a file: it must never be trusted by an adapter guarding anything real.
 //
-//	wga-device init    -f dev.json -name "test device"
-//	wga-device enroll  -f dev.json 'wga://enroll?hub=…&code=…&user=…&mode=new|join'
-//	wga-device roster  -f dev.json                 (the user's verified devices; prints the account fingerprint)
-//	wga-device joins   -f dev.json                 (devices asking to join this user)
-//	wga-device admit   -f dev.json DEVICE_ID       (approve a join: sign the next roster with it)
-//	wga-device remove  -f dev.json DEVICE_ID       (sign the next roster without it)
-//	wga-device list    -f dev.json
-//	wga-device approve -f dev.json REQUEST_ID
-//	wga-device deny    -f dev.json REQUEST_ID
-//	wga-device acks    -f dev.json
+//	interpose-device init    -f dev.json -name "test device"
+//	interpose-device enroll  -f dev.json 'interpose://enroll?hub=…&code=…&user=…&mode=new|join'
+//	interpose-device roster  -f dev.json                 (the user's verified devices; prints the account fingerprint)
+//	interpose-device joins   -f dev.json                 (devices asking to join this user)
+//	interpose-device admit   -f dev.json DEVICE_ID       (approve a join: sign the next roster with it)
+//	interpose-device remove  -f dev.json DEVICE_ID       (sign the next roster without it)
+//	interpose-device list    -f dev.json
+//	interpose-device approve -f dev.json REQUEST_ID
+//	interpose-device deny    -f dev.json REQUEST_ID
+//	interpose-device acks    -f dev.json
 package main
 
 import (
@@ -38,15 +38,15 @@ type session struct {
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: wga-device init|enroll|roster|joins|admit|remove|list|approve|deny|acks -f dev.json …")
+		fmt.Fprintln(os.Stderr, "usage: interpose-device init|enroll|roster|joins|admit|remove|list|approve|deny|acks -f dev.json …")
 		os.Exit(2)
 	}
 	fs := flag.NewFlagSet(os.Args[1], flag.ExitOnError)
 	file := fs.String("f", "dev.json", "device key file")
-	name := fs.String("name", "wga-device", "device name (init)")
+	name := fs.String("name", "interpose-device", "device name (init)")
 	_ = fs.Parse(os.Args[2:])
 	if err := run(os.Args[1], *file, *name, fs.Args()); err != nil {
-		fmt.Fprintln(os.Stderr, "wga-device:", err)
+		fmt.Fprintln(os.Stderr, "interpose-device:", err)
 		os.Exit(1)
 	}
 }
@@ -77,11 +77,11 @@ func run(cmd, file, name string, args []string) error {
 	switch cmd {
 	case "enroll":
 		if len(args) != 1 {
-			return errors.New("enroll needs the wga://enroll link")
+			return errors.New("enroll needs the interpose://enroll link")
 		}
 		u, err := url.Parse(args[0])
-		if err != nil || u.Scheme != "wga" || u.Host != "enroll" {
-			return errors.New("not a wga://enroll link")
+		if err != nil || u.Scheme != "interpose" || u.Host != "enroll" {
+			return errors.New("not an interpose://enroll link")
 		}
 		q := u.Query()
 		user, mode := q.Get("user"), q.Get("mode")

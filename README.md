@@ -4,8 +4,8 @@ Approve or deny agent requests from an iPhone, secured by a Secure Enclave key b
 **clearing house** for agent approvals: SSH tickets (Warpgate), and later held mail and scoped MCP leases.
 
 Three parts:
-- **Interpose Hub** (`wga-hub`): a relay and management UI. It holds nothing that can act: requests are sealed for the
-  user's phones, decisions are signed on them.
+- **Interpose Hub** (`interpose-hub`): a relay and management UI. It holds nothing that can act: requests are sealed for
+  the user's phones, decisions are signed on them.
 - **Adapters**, one beside each service it guards: they build the requests, verify every decision against their own
   trust list, and act.
 - **The app** (Interloper, iOS): shows a request, asks for Face ID, signs the decision.
@@ -14,10 +14,11 @@ Three parts:
 
 ```
 ios/                  the app (SwiftUI, XcodeGen; ApproverKit Swift package)          ios/README.md
-broker/               the hub (wga-hub) and the software phone for tests (wga-device)  broker/README.md
+broker/               the hub (interpose-hub) and the software phone for tests         broker/README.md
+                      (interpose-device)
 adapter/              how adapters work, the shared adapter core and command line,     adapter/README.md
-                      and the reference adapter (wga-adapter-demo)
-adapters/warpgate/    the Warpgate adapter (wga-adapter) and its guided install        adapters/warpgate/README.md
+                      and the reference adapter (interpose-adapter-demo)
+adapters/warpgate/    the Warpgate adapter (interpose-adapter) and its guided install  adapters/warpgate/README.md
 internal/             Go shared by all of the above: protocol (+ Go/Swift interop fixtures), audit log, software device
 docs/                 design, wire protocol, Docker setup, runbooks
 scripts/              end-to-end tests (CLI device; real app in the simulator)
@@ -46,7 +47,7 @@ make e2e           # real binaries over loopback with the software device
 make ios-test      # ApproverKit: swift test
 make e2e-ui        # real app in the iOS simulator against a live hub and the reference adapter
 make build         # every Go command into bin/
-make dist-adapter  # tests, then adapters/warpgate/deploy/wga-adapter for linux/arm64
+make dist-adapter  # tests, then adapters/warpgate/deploy/interpose-adapter for linux/arm64
 make docker-hub    # the hub's container image
 ```
 
@@ -73,8 +74,8 @@ addresses. Put real values in local configuration (`.env`, flags), never in the 
 
 Trust is per **user**. Each user has a device list (roster) signed by their own phones, and a new phone is approved on
 an existing one with Face ID. Each adapter trusts a user once:
-`wga-adapter trust add-user <user> <account fingerprint>`. The hub hands out enrollment codes but cannot add a device
-to anyone.
+`interpose-adapter trust add-user <user> <account fingerprint>`. The hub hands out enrollment codes but cannot add a
+device to anyone.
 
 Status:
 - In use for Warpgate tickets, on LAN/VPN, with APNs wake-ups. Phase 1 (a single broker that sent Pushover links to
