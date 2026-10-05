@@ -25,7 +25,7 @@ PUB=$(awk '/public key/ {print $3}' key.txt)
 
 echo "== register adapter via the management UI form"
 PAGE=$(curl -sf -X POST localhost:18741/adapters -H 'Sec-Fetch-Site: same-origin' --data-urlencode id=demo --data-urlencode "key=$PUB")
-TOKEN=$(printf '%s' "$PAGE" | grep -A1 'shown once' | tail -1 | sed -E 's/.*<code>([^<]+)<\/code>.*/\1/')
+TOKEN=$(printf '%s' "$PAGE" | sed -n -E 's/.*<p class="token">([^<]+)<\/p>.*/\1/p')
 [ -n "$TOKEN" ] || { echo "no token in page"; exit 1; }
 printf '%s\n' "$TOKEN" > ad/hub-token; chmod 400 ad/hub-token
 
@@ -50,13 +50,13 @@ echo "== run adapter (demo source)"
 "$B/wga-adapter" run -id demo -source demo -dir ad -hub http://127.0.0.1:18740 -poll 500ms -demo-listen 127.0.0.1:18749 > adapter.log 2>&1 &
 AD=$!
 sleep 1
-curl -sf localhost:18749/requests -d '{"requester":"helper","title":"helper wants ADMIN on web-02","risk":"high","reason":"rotate certs ‮evil","facts":[{"label":"Host","value":"n"},{"label":"Access","value":"ADMIN","level":"danger"}],"on_behalf_of":{"principal":"slack:U0123","display":"Kim","attested_by":"chatbot@agent-host"}}' >/dev/null
+curl -sf localhost:18749/requests -d '{"requester":"helper","title":"helper wants ADMIN on web-02","risk":"high","reason":"rotate certs ‮evil","facts":[{"label":"Host","value":"web-02"},{"label":"Access","value":"ADMIN","level":"danger"}],"on_behalf_of":{"principal":"slack:U0123","display":"Kim","attested_by":"chatbot@agent-host"}}' >/dev/null
 curl -sf localhost:18749/requests -d '{"requester":"claude","title":"claude wants RW on db-01","risk":"elevated","reason":"fix backups"}' >/dev/null
 sleep 1.5
 
 echo "== phone one lists, approves one, denies the other"
 "$B/wga-device" list -f dev.json | tee list.txt
-ID1=$(grep 'ADMIN on n' list.txt | awk '{print $1}')
+ID1=$(grep 'ADMIN on web-02' list.txt | awk '{print $1}')
 ID2=$(grep 'RW on db-01' list.txt | awk '{print $1}')
 "$B/wga-device" approve -f dev.json "$ID1"
 "$B/wga-device" deny -f dev.json "$ID2"
