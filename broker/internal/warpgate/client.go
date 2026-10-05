@@ -148,7 +148,7 @@ func (c *Client) TargetNames(ctx context.Context) (map[string]string, error) {
 	return m, nil
 }
 
-// Deny denies a pending request; the reason is shown to the requester (bastion-ssh prints it).
+// Deny denies a pending request; the reason is shown to the requester.
 func (c *Client) Deny(ctx context.Context, id, reason string) error {
 	code, err := c.do(ctx, http.MethodPost, "/@warpgate/admin/api/ticket-requests/"+url.PathEscape(id)+"/deny",
 		map[string]string{"reason": reason}, nil)

@@ -1,8 +1,8 @@
-# Hub sign-in with Authelia (OIDC)
+# Hub sign-in with OIDC (Authelia example)
 
-The hub's management UI, and phone sign-in in the app, authenticate with OIDC against Authelia
-(`https://sso.home.example`, 4.39). This page is everything needed on both sides. **Nothing here has been applied to n
-yet.**
+The hub's management UI, and phone sign-in in the app, authenticate with OIDC. Any OIDC provider that can put a
+username and groups in its tokens works; the examples below are for Authelia 4.39 at `https://sso.home.example`.
+This page is everything needed on both sides.
 
 What sign-in decides, and what it does not:
 - **It decides** who may hand out enrollment codes and see what.
@@ -11,19 +11,20 @@ What sign-in decides, and what it does not:
     their own phones at the hub.
 - **It does not decide** which phones can approve. That is each user's roster, signed by their own phones
   (`docs/PROTOCOL.md`).
-- **So a compromised Authelia account can start an enrollment, and nothing more.** The new phone still waits for
+- **So a compromised OIDC account can start an enrollment, and nothing more.** The new phone still waits for
   approval on one of the user's existing phones, and adapters trust users by account fingerprint, not by what the hub
-  or Authelia says.
+  or the OIDC provider says.
 
-## 1. LLDAP groups
+## 1. Groups
 
-Create, then add people to them:
+In the provider's user directory (for Authelia, its LDAP backend or file users), create these groups, then add people
+to them:
 - `interpose_users`: may sign in to the hub;
 - `interpose_admins`: may sign in and is a hub admin.
 
-## 2. Authelia (`DockerStacks/reverse-proxy/config/authelia/configuration.yml`)
+## 2. Authelia
 
-Under `identity_providers.oidc.authorization_policies`:
+In your Authelia configuration, under `identity_providers.oidc.authorization_policies`:
 
 ```yaml
       interpose:
@@ -45,7 +46,7 @@ better:
         id_token: ['preferred_username', 'groups', 'name']
 ```
 
-Under `identity_providers.oidc.clients`, modelled on the Mealie client:
+Under `identity_providers.oidc.clients`:
 
 ```yaml
       - client_id: interpose
@@ -62,21 +63,21 @@ Under `identity_providers.oidc.clients`, modelled on the Mealie client:
         authorization_policy: interpose
 ```
 
-Put the secret in the reverse-proxy `.env` as `AUTHELIA_OIDC_CLIENT_SECRET_INTERPOSE`, in the same form as the
-other clients' secrets, and pass it through in `reverse-proxy/compose.yaml` like the others. Restart Authelia.
+Provide the client secret to Authelia as `AUTHELIA_OIDC_CLIENT_SECRET_INTERPOSE` (hashed or plain, in the same form as
+your other clients' secrets), and give the hub the plain secret in a file. Restart Authelia.
 
 ## 3. The hub
 
-The management UI needs a stable https name: `interpose-hub.home.example` is assumed above, routed by Traefik to the hub's
-`-admin` listener. Do **not** put Authelia forward-auth in front of it as well: the hub signs people in itself, and
-`/oidc/callback` must reach it.
+The management UI needs a stable https name: `interpose-hub.home.example` is assumed above, routed by your reverse
+proxy to the hub's `-admin` listener. Do **not** put forward-auth in front of it as well: the hub signs people in
+itself, and `/oidc/callback` must reach it.
 
 ```
 wga-hub \
   -api :8740 -url https://<hub API name>:8740 \
   -admin 0.0.0.0:8741 \
   -oidc-issuer https://sso.home.example \
-  -oidc-client-id bastion \
+  -oidc-client-id interpose \
   -oidc-secret-file /run/secrets/oidc-client-secret \
   -oidc-redirect https://interpose-hub.home.example/oidc/callback \
   -oidc-admin-group interpose_admins
@@ -90,7 +91,7 @@ wga-hub \
 ## 4. Phones
 
 - In the app's Enroll screen, under **Sign in**, enter `https://interpose-hub.home.example`, then tap *Sign in to get a
-  code*. Authelia (two-factor) opens in a private browser session.
+  code*. The OIDC provider's sign-in (two-factor) opens in a private browser session.
 - The hub sends the app back a code for you: a **new account** the first time, otherwise **another device**. Approve
   that device on one of your existing phones.
 - Nothing is remembered between sign-ins.

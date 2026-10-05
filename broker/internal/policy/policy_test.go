@@ -21,10 +21,10 @@ func TestEvaluate(t *testing.T) {
 		host   string
 		tier   Tier
 	}{
-		{"ok rw", Request{"claude", "build-01-rw", dur(2 * time.Hour), now}, false, "", "build-01", TierRW},
+		{"ok rw", Request{"claude", "db-01-rw", dur(2 * time.Hour), now}, false, "", "db-01", TierRW},
 		{"ok admin", Request{"helper", "db-01-admin", dur(30 * time.Minute), now.Add(-14 * time.Minute)}, false, "", "db-01", TierAdmin},
 		{"unknown user", Request{"", "db-01-rw", dur(time.Hour), now}, true, "requester is not a Warpgate user", "db-01", TierRW},
-		{"not allowed", Request{"assistant", "db-01-rw", dur(time.Hour), now}, true, "assistant may not ask for tickets", "db-01", TierRW},
+		{"not allowed", Request{"intruder", "db-01-rw", dur(time.Hour), now}, true, "intruder may not ask for tickets", "db-01", TierRW},
 		{"unknown target", Request{"claude", "", dur(time.Hour), now}, true, "target is not a Warpgate target", "", ""},
 		{"ro tier", Request{"claude", "db-01-ro", dur(time.Hour), now}, true, "db-01-ro is not an rw or admin tier", "db-01-ro", ""},
 		{"own target", Request{"claude", "home", dur(time.Hour), now}, true, "home is not an rw or admin tier", "home", ""},

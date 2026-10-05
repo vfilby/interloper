@@ -35,7 +35,7 @@ type Verdict struct {
 	Tier   Tier   // "" when the target is not a ticket tier
 }
 
-// SplitTarget splits "build-01-admin" into ("build-01", admin). ok is false for anything but *-rw / *-admin.
+// SplitTarget splits "db-01-admin" into ("db-01", admin). ok is false for anything but *-rw / *-admin.
 func SplitTarget(name string) (host string, tier Tier, ok bool) {
 	for _, t := range []Tier{TierAdmin, TierRW} {
 		if h, found := strings.CutSuffix(name, "-"+string(t)); found && h != "" {

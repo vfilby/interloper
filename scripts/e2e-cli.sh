@@ -50,14 +50,14 @@ echo "== run adapter (demo source)"
 "$B/wga-adapter" run -id demo -source demo -dir ad -hub http://127.0.0.1:18740 -poll 500ms -demo-listen 127.0.0.1:18749 > adapter.log 2>&1 &
 AD=$!
 sleep 1
-curl -sf localhost:18749/requests -d '{"requester":"helper","title":"helper wants ADMIN on n","risk":"high","reason":"rotate certs ‮evil","facts":[{"label":"Host","value":"n"},{"label":"Access","value":"ADMIN","level":"danger"}],"on_behalf_of":{"principal":"slack:U0123","display":"Kim","attested_by":"agent@agent-host"}}' >/dev/null
-curl -sf localhost:18749/requests -d '{"requester":"claude","title":"claude wants RW on build-01","risk":"elevated","reason":"fix backups"}' >/dev/null
+curl -sf localhost:18749/requests -d '{"requester":"helper","title":"helper wants ADMIN on web-02","risk":"high","reason":"rotate certs ‮evil","facts":[{"label":"Host","value":"n"},{"label":"Access","value":"ADMIN","level":"danger"}],"on_behalf_of":{"principal":"slack:U0123","display":"Kim","attested_by":"chatbot@agent-host"}}' >/dev/null
+curl -sf localhost:18749/requests -d '{"requester":"claude","title":"claude wants RW on db-01","risk":"elevated","reason":"fix backups"}' >/dev/null
 sleep 1.5
 
 echo "== phone one lists, approves one, denies the other"
 "$B/wga-device" list -f dev.json | tee list.txt
 ID1=$(grep 'ADMIN on n' list.txt | awk '{print $1}')
-ID2=$(grep 'RW on build-01' list.txt | awk '{print $1}')
+ID2=$(grep 'RW on db-01' list.txt | awk '{print $1}')
 "$B/wga-device" approve -f dev.json "$ID1"
 "$B/wga-device" deny -f dev.json "$ID2"
 

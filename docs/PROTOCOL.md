@@ -66,16 +66,16 @@ then encrypt, so the hub sees neither the record nor the adapter's signature ove
   "kind": "ssh.ticket",
   "shape": "once" | "lease",
   "risk": "normal" | "elevated" | "high",
-  "title": "helper wants RW on build-01",
+  "title": "helper wants RW on db-01",
   "requester": "helper",
-  "on_behalf_of": {"principal": "slack:U0123", "display": "Kim", "attested_by": "agent@agent-host"},
+  "on_behalf_of": {"principal": "slack:U0123", "display": "Kim", "attested_by": "chatbot@agent-host"},
   "facts": [
-    {"label": "Host", "value": "build-01"},
+    {"label": "Host", "value": "db-01"},
     {"label": "Tier", "value": "RW", "level": "warn"},
     {"label": "Duration", "value": "2h"}
   ],
   "reason": "<requester's own words>",
-  "lease": {"duration_s": 7200, "scope": "build-01-rw", "max_uses": 0},
+  "lease": {"duration_s": 7200, "scope": "db-01-rw", "max_uses": 0},
   "created_at": 1790000000,
   "expires_at": 1790000900,
   "nonce": "<b64 16 random bytes>"
