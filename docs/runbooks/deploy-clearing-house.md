@@ -41,17 +41,16 @@ Warpgate token (as a file named `warpgate-token`) into one directory on the adap
 
 On the adapter host, in the staging directory:
 ```
-cd ~/adapter-staging && sudo ./install.sh
+cd ~/adapter-staging && sudo ./install.sh <sha256 from step 3>
 ```
-It runs start to finish and, where it needs you, shows a **YOUR TURN** box, waits, and checks what you enter:
-1. confirm the binary's sha256 (compare with step 3);
-2. the hub's public URL and Warpgate's URL, if `.env` does not have them yet;
-3. the Warpgate token, if you did not copy it over as `warpgate-token`;
-4. registering the adapter: it shows the **public** key to paste into the hub's management UI (**Adapters**, id
+Given the sha256, it checks the binary without asking (without it, it asks once per new binary). It runs start to finish and, where it needs you, shows a **YOUR TURN** box, waits, and checks what you enter:
+1. the hub's public URL and Warpgate's URL, if `.env` does not have them yet;
+2. the Warpgate token, if you did not copy it over as `warpgate-token`;
+3. registering the adapter: it shows the **public** key to paste into the hub's management UI (**Adapters**, id
    `warpgate`), then asks for the token the hub shows once;
-5. the account to trust: user id and **account fingerprint, read off a phone on the account** (Device tab), never off
+4. the account to trust: user id and **account fingerprint, read off a phone on the account** (Device tab), never off
    the hub's page, since a hub that lies about it would get an account of its own trusted;
-6. it starts the adapter, waits for it to report `started`, and shows the adapter fingerprint to compare on the phone
+5. it starts the adapter, waits for it to report `started`, and shows the adapter fingerprint to compare on the phone
    (Device → **Check hub for new adapters**).
 
 Running it again is safe and is also how you update: finished steps are skipped. Only real problems stop it, marked
