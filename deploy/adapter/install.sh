@@ -1,9 +1,9 @@
 #!/bin/bash
-# install.sh: install or update the Interloper Warpgate adapter in /opt/interpose-adapter on bastion.
+# install.sh: install or update the Warpgate adapter in /opt/interpose-adapter, on the Warpgate host.
 # Runbook: docs/runbooks/deploy-clearing-house.md. Run it from the directory the deploy files were copied to:
-#   cd ~/interpose-staging && sudo ./install.sh
+#   cd ~/adapter-staging && sudo ./install.sh
 #
-# First install: warpgate-token (minted with `bastion-apply --mint-token interpose-adapter`) must be here too. Every secret
+# First install: warpgate-token (the adapter's own Warpgate approver token; runbook step 2) must be here too. Every secret
 # found here is moved into place and the copy shredded. .env (your settings) is created once and never overwritten.
 # The adapter starts only when it has a hub token and trusts at least one account; until then this stops and says
 # what is missing.
@@ -18,18 +18,18 @@ die() { printf '\nSTOPPED: %s\n' "$*" >&2; exit 1; }
 
 [ "$(id -u)" = 0 ] || die "run it with sudo: cd $HERE && sudo ./install.sh"
 for f in Dockerfile compose.yaml wga-adapter adapter.env.default; do
-  [ -f "$HERE/$f" ] || die "$HERE/$f is missing. Copy all of deploy/adapter/ from the Mac after running make dist-adapter."
+  [ -f "$HERE/$f" ] || die "$HERE/$f is missing. Copy all of deploy/adapter/ here after running make dist-adapter."
 done
 
 step "Check the adapter binary"
 echo "sha256 here: $(sha256sum "$HERE/wga-adapter" | cut -d' ' -f1)"
-read -r -p "Is that the same sha256 that 'make dist-adapter' printed on the Mac? [y/N] " answer
+read -r -p "Is that the same sha256 that 'make dist-adapter' printed on your workstation? [y/N] " answer
 [ "$answer" = y ] || [ "$answer" = Y ] || die "binary not confirmed; nothing was changed"
 
 step "Check the Warpgate token"
 if [ -s "$HERE/warpgate-token" ]; then echo "warpgate-token: new copy found here, will be installed"
 elif [ -s "$DEST/secrets/warpgate-token" ]; then echo "warpgate-token: keeping the installed one"
-else die "no warpgate-token here or installed (bastion-apply --mint-token interpose-adapter; runbook step 2)"; fi
+else die "no warpgate-token here or installed (the adapter's Warpgate approver token; runbook step 2)"; fi
 
 step "Install files into $DEST"
 install -d -m 0755 -o root -g root "$DEST"

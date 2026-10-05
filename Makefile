@@ -17,8 +17,7 @@ dist: test
 	cd broker && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags='-s -w' -o ../deploy/broker ./cmd/broker
 	@shasum -a 256 deploy/broker
 
-# The Warpgate adapter for bastion (docs/runbooks/deploy-clearing-house.md). The hub is built on n from the
-# pinned commit (DockerStacks/interpose-hub).
+# The Warpgate adapter, for the Warpgate host (docs/runbooks/deploy-clearing-house.md).
 dist-adapter: test
 	cd broker && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags='-s -w' -o ../deploy/adapter/wga-adapter ./cmd/wga-adapter
 	@shasum -a 256 deploy/adapter/wga-adapter
