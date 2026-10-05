@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vfilby/interloper/broker/internal/apns"
-	"github.com/vfilby/interloper/internal/protocol"
-	"github.com/vfilby/interloper/internal/softdevice"
+	"github.com/vfilby/interpose/broker/internal/apns"
+	"github.com/vfilby/interpose/internal/protocol"
+	"github.com/vfilby/interpose/internal/softdevice"
 )
 
 type fakePusher struct {

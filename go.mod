@@ -1,4 +1,4 @@
-module github.com/vfilby/interloper
+module github.com/vfilby/interpose
 
 go 1.26.0
 

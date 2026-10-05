@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vfilby/interloper/internal/protocol"
+	"github.com/vfilby/interpose/internal/protocol"
 )
 
 // Client is the device's side of the hub API, as the app implements it.

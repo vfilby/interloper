@@ -18,9 +18,9 @@ start other workflows, so the TestFlight upload on `main` would not run.
 ## One-time repository settings (admin)
 
 ```
-gh api -X PATCH repos/vfilby/interloper -F allow_auto_merge=true -F delete_branch_on_merge=true
-gh api -X PUT repos/vfilby/interloper/private-vulnerability-reporting    # SECURITY.md's reporting channel
-gh api -X PUT repos/vfilby/interloper/branches/main/protection --input - <<'EOF'
+gh api -X PATCH repos/vfilby/interpose -F allow_auto_merge=true -F delete_branch_on_merge=true
+gh api -X PUT repos/vfilby/interpose/private-vulnerability-reporting    # SECURITY.md's reporting channel
+gh api -X PUT repos/vfilby/interpose/branches/main/protection --input - <<'EOF'
 {"required_status_checks": {"strict": false, "checks": [{"context": "CI ok"}]},
  "required_pull_request_reviews": {"required_approving_review_count": 0},
  "enforce_admins": true, "restrictions": null,

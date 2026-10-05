@@ -13,9 +13,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/vfilby/interloper/adapter"
-	"github.com/vfilby/interloper/adapter/cli"
-	"github.com/vfilby/interloper/adapter/demo"
+	"github.com/vfilby/interpose/adapter"
+	"github.com/vfilby/interpose/adapter/cli"
+	"github.com/vfilby/interpose/adapter/demo"
 )
 
 func main() {

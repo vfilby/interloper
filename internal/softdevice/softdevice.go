@@ -13,7 +13,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/vfilby/interloper/internal/protocol"
+	"github.com/vfilby/interpose/internal/protocol"
 )
 
 type Device struct {

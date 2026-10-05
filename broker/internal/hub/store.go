@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/vfilby/interloper/internal/protocol"
+	"github.com/vfilby/interpose/internal/protocol"
 )
 
 // Bounds. The hub is reachable by every adapter and device; nothing it keeps may grow without limit.

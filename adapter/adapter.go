@@ -14,8 +14,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/vfilby/interloper/internal/audit"
-	"github.com/vfilby/interloper/internal/protocol"
+	"github.com/vfilby/interpose/internal/audit"
+	"github.com/vfilby/interpose/internal/protocol"
 )
 
 // Item is one thing at the service waiting for a person, described from the service's own state.
