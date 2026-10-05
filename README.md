@@ -79,10 +79,21 @@ gh api -X PATCH repos/vfilby/interloper -F allow_auto_merge=true -F delete_branc
 gh api -X PUT repos/vfilby/interloper/private-vulnerability-reporting    # SECURITY.md's reporting channel
 gh api -X PUT repos/vfilby/interloper/branches/main/protection --input - <<'EOF'
 {"required_status_checks": {"strict": false, "checks": [{"context": "CI ok"}]},
- "enforce_admins": false, "required_pull_request_reviews": null, "restrictions": null,
+ "required_pull_request_reviews": {"required_approving_review_count": 0},
+ "enforce_admins": true, "restrictions": null,
  "required_linear_history": true, "allow_force_pushes": false, "allow_deletions": false}
 EOF
 ```
+
+What that protection means for `main`:
+- every change arrives through a pull request (no approving review needed, so you can merge your own);
+- the pull request merges only once **CI ok** has passed; `strict: false` means it need not be rebased on the latest
+  `main` first;
+- the rules bind admins too (`enforce_admins`): no direct pushes, not even by the owner;
+- history stays linear (squash merges), and `main` cannot be force-pushed or deleted. To allow force pushes later, set
+  `allow_force_pushes` to `true` and run the same command again.
+
+Tags are not covered, so the TestFlight workflow can still push its `ios/v*` tags.
 
 ## Notes
 
