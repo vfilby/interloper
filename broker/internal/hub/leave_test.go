@@ -2,6 +2,8 @@ package hub
 
 import (
 	"bytes"
+	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -207,5 +209,29 @@ func TestAdminDeleteUserForm(t *testing.T) {
 	}
 	if _, ok := acc.st.Chain("vince"); ok {
 		t.Fatal("account still there")
+	}
+}
+
+// Registering an adapter shows its once-only token on a page of its own, not above the fold of the overview.
+func TestAdapterAddedPage(t *testing.T) {
+	acc := newAccount(t, "vince")
+	h := (&Admin{Store: acc.st, HubURL: "http://hub.test:8740"}).Handler()
+	pub, _, _ := ed25519.GenerateKey(rand.Reader)
+	form := url.Values{"id": {"warpgate"}, "key": {protocol.B64(pub)}}
+	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:8741/adapters", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	body := rec.Body.String()
+	for _, want := range []string{"Adapter registered", `class="token"`, protocol.Fingerprint(pub), `href="/#adapters"`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("page lacks %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "Pending and recent requests") {
+		t.Fatal("the token page is the overview again")
+	}
+	if rec.Header().Get("Cache-Control") != "no-store" {
+		t.Fatal("the token page may be cached")
 	}
 }
