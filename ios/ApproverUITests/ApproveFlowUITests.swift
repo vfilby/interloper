@@ -149,7 +149,16 @@ final class ApproveFlowUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts[account].waitForExistence(timeout: 20), "the confirmed account fingerprint is not shown")
         let roster = app.staticTexts.containing(NSPredicate(format: "label CONTAINS[c] 'on this account (roster 2)'")).firstMatch
         XCTAssertTrue(roster.exists, "the verified roster is not shown")
+        XCTAssertTrue(app.staticTexts["this-device-badge"].exists, "this device is not marked in the device list")
         attach(app, "join-settings-confirmed")
+
+        // This device's keys sit collapsed under the device list.
+        let keys = app.buttons["This device's keys"]
+        scrollTo(keys, in: app)
+        XCTAssertFalse(app.staticTexts["Device id"].exists, "the device's keys are shown before they are expanded")
+        keys.tap()
+        XCTAssertTrue(app.staticTexts["Device id"].waitForExistence(timeout: 5), "expanding does not show the device's keys")
+        attach(app, "join-settings-keys")
     }
 
     private func scrollTo(_ element: XCUIElement, in app: XCUIApplication) {
