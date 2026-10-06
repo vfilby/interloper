@@ -361,9 +361,9 @@ func (a *API) deviceDecide(w http.ResponseWriter, r *http.Request, d *Device) {
 	w.WriteHeader(http.StatusAccepted)
 }
 
-func (a *API) deviceAcks(w http.ResponseWriter, r *http.Request, _ *Device) {
+func (a *API) deviceAcks(w http.ResponseWriter, r *http.Request, d *Device) {
 	since, _ := strconv.ParseInt(r.URL.Query().Get("since"), 10, 64)
-	res := a.Store.Acks(time.Unix(since, 0))
+	res := a.Store.Acks(d.ID, time.Unix(since, 0))
 	if res == nil {
 		res = []AckEntry{}
 	}

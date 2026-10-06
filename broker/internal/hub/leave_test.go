@@ -31,7 +31,12 @@ func newAccount(t *testing.T, user string) account {
 	if err != nil {
 		t.Fatal(err)
 	}
-	now := time.Now()
+	return addAccount(t, st, user, time.Now())
+}
+
+// addAccount enrolls a user with phones A and B at an existing store.
+func addAccount(t *testing.T, st *Store, user string, now time.Time) account {
+	t.Helper()
 	a, _ := softdevice.New("phone A")
 	b, _ := softdevice.New("phone B")
 	cardA, _ := a.Card(now)
