@@ -55,8 +55,9 @@ for the Warpgate adapter, but the phase-1 broker's roles are now split:
     - re-checks that the service still shows the item, unchanged, before acting;
     - sends a signed ack;
     - denies anything unanswered (fails closed).
-  - Sources built: `demo` (fake service, for tests) and `warpgate` (applies the phase-1 policy, then needs a device
-    decision to approve).
+  - Sources built: `demo` (fake service, for tests), `warpgate` (applies the phase-1 policy, then needs a device
+    decision to approve) and `mailpit` (mail an auto-release gate left `held`; approve releases it to exactly the
+    recipients shown, see [adapters/mailpit](../adapters/mailpit/README.md)).
 - **Hub** (`interpose-hub`, `broker/`):
   - Stores ciphertexts, queues decisions, keeps acks, sends APNs wake-ups (generic text, no request content).
   - Bearer tokens get adapters and devices onto it; they are not a security boundary.
@@ -94,11 +95,11 @@ Not verified yet:
 
 ### Next adapters
 
-- **Mail (Mailpit).**
-  - A `Source` lists held messages through Mailpit's API.
-  - Facts: from, to (each recipient), subject, attachments with sizes, a body excerpt.
+- **Mail (Mailpit).** Built: [adapters/mailpit](../adapters/mailpit/README.md). It sits behind an allow-list gate on
+  Mailpit's webhook. What the gate auto-sends never reaches the phone; what it tags `held` does.
+  - Facts: from, each recipient, subject, attachments with sizes, a body excerpt.
   - Approve releases that message to exactly the recipients shown.
-  - Shape `once`. Allowlisted recipients keep relaying automatically.
+  - Shape `once`. The outcome is a tag on the message.
 - **Paperless (MCP gateway).**
   - The gateway exposes MCP tools to agents and holds a view-only Paperless token. Agents never get that token.
   - An agent asks for a lease, e.g. "correspondent = Insurance, read, 2h, max 20 documents". The lease is the record's
@@ -355,6 +356,7 @@ broker/             Go: interpose-hub (relay, management UI, APNs), interpose-de
                     e2e tests
 adapter/            Go: the adapter core and shared command line; the reference adapter (demo source); the adapter guide
 adapters/warpgate/  Go: the Warpgate adapter (source, policy, Warpgate API client) and its deploy files
+adapters/mailpit/   Go: the mail adapter (source, Mailpit API client) and its deploy files
 internal/           Go shared by hub and adapters: protocol (+ interop fixtures), audit, software device
 infra/              CDK app (TypeScript), if option B is chosen: IoT Core policies, logging, Roles Anywhere, alarms
 docs/               this file, protocol spec (record/decision formats), Docker setup, runbooks

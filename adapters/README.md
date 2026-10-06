@@ -6,6 +6,6 @@ One directory per service the clearing house can guard. Each builds on the adapt
 | Adapter | Guards | Binary | Status |
 |---|---|---|---|
 | [warpgate](warpgate/) | Warpgate SSH ticket requests | `interpose-adapter` | in use |
+| [mailpit](mailpit/) | mail a Mailpit relay is holding (after an auto-release gate) | `interpose-adapter-mailpit` | new |
 
-Planned (see docs/DESIGN.md, "Next adapters"): held mail (Mailpit), scoped document leases (Paperless via an MCP
-gateway).
+Planned (see docs/DESIGN.md, "Next adapters"): scoped document leases (Paperless via an MCP gateway).

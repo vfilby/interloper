@@ -3,3 +3,4 @@ bin/
 hub-data/
 adapter-data/
 adapters/warpgate/deploy/interpose-adapter
+adapters/mailpit/deploy/interpose-adapter-mailpit

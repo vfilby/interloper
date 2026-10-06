@@ -1,7 +1,7 @@
 # Interpose
 
 Approve or deny agent requests from an iPhone, secured by a Secure Enclave key behind Face ID or an app PIN. A
-**clearing house** for agent approvals: SSH tickets (Warpgate), and later held mail and scoped MCP leases.
+**clearing house** for agent approvals: SSH tickets (Warpgate), held mail (Mailpit), and later scoped MCP leases.
 
 Three parts:
 - **Interpose Hub** (`interpose-hub`): a relay and management UI. It holds nothing that can act: requests are sealed for
@@ -19,6 +19,7 @@ broker/               the hub (interpose-hub) and the software phone for tests  
 adapter/              how adapters work, the shared adapter core and command line,     adapter/README.md
                       and the reference adapter (interpose-adapter-demo)
 adapters/warpgate/    the Warpgate adapter (interpose-adapter) and its guided install  adapters/warpgate/README.md
+adapters/mailpit/     the mail adapter (interpose-adapter-mailpit): held mail          adapters/mailpit/README.md
 internal/             Go shared by all of the above: protocol (+ Go/Swift interop fixtures), audit log, software device
 docs/                 design, wire protocol, Docker setup, runbooks
 scripts/              end-to-end tests (CLI device; real app in the simulator)
@@ -48,6 +49,7 @@ make ios-test      # ApproverKit: swift test
 make e2e-ui        # real app in the iOS simulator against a live hub and the reference adapter
 make build         # every Go command into bin/
 make dist-adapter  # tests, then adapters/warpgate/deploy/interpose-adapter for linux/arm64
+make dist-adapter-mailpit  # tests, then adapters/mailpit/deploy/interpose-adapter-mailpit (linux/amd64)
 make docker-hub    # the hub's container image
 ```
 
