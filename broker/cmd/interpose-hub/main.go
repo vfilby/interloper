@@ -61,7 +61,7 @@ func main() {
 	flag.StringVar(&c.keyFile, "session-key-file", "", "session signing key file (default <state>/session.key)")
 	flag.StringVar(&c.apnsKeyFile, "apns-key-file", "", "APNs auth key (.p8); empty: no push notifications")
 	flag.StringVar(&c.apnsKeyID, "apns-key-id", "", "the APNs key's Key ID")
-	flag.StringVar(&c.apnsTeamID, "apns-team-id", "ABCDE12345", "Apple developer team id")
+	flag.StringVar(&c.apnsTeamID, "apns-team-id", "", "Apple developer team id (required with -apns-key-file)")
 	flag.StringVar(&c.apnsTopic, "apns-topic", "com.eff3.interloper", "the app's bundle id")
 	flag.Parse()
 
@@ -99,6 +99,9 @@ func run(log *slog.Logger, c config) error {
 		}
 		if c.apnsKeyID == "" {
 			return errors.New("-apns-key-id is required with -apns-key-file")
+		}
+		if c.apnsTeamID == "" {
+			return errors.New("-apns-team-id is required with -apns-key-file")
 		}
 		push = &apns.Client{KeyID: c.apnsKeyID, TeamID: c.apnsTeamID, Topic: c.apnsTopic, Key: key}
 	}

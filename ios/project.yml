@@ -20,7 +20,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.eff3.interloper
-        DEVELOPMENT_TEAM: "ABCDE12345"
+        DEVELOPMENT_TEAM: "${APPLE_TEAM_ID}"
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1"
         CODE_SIGN_STYLE: Automatic
@@ -66,7 +66,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.eff3.interloper.uitests
-        DEVELOPMENT_TEAM: "ABCDE12345"
+        DEVELOPMENT_TEAM: "${APPLE_TEAM_ID}"
         SWIFT_VERSION: "5.0"
         TEST_TARGET_NAME: Approver
         GENERATE_INFOPLIST_FILE: YES
