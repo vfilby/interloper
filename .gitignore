@@ -3,6 +3,7 @@ bin/
 hub-data/
 adapter-data/
 adapters/warpgate/deploy/interpose-adapter
+adapters/mailpit/deploy/interpose-adapter-mailpit
 
 # Secrets: never committable, wherever a copy lands while staging an install.
 .env
@@ -15,4 +16,5 @@ session.key
 signing.key
 hub-token
 warpgate-token
+mailpit-password
 oidc-secret

@@ -41,7 +41,7 @@ jobs:
       - name: cross-build (linux/arm64, linux/amd64)
         run: |
           for arch in arm64 amd64; do
-            CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath -o "bin/$arch/" ./broker/cmd/... ./adapter/cmd/... ./adapters/warpgate/cmd/...
+            CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath -o "bin/$arch/" ./broker/cmd/... ./adapter/cmd/... ./adapters/warpgate/cmd/... ./adapters/mailpit/cmd/...
           done
           ls -l bin/*
 
@@ -66,6 +66,15 @@ jobs:
         run: cp adapter.env.default .env && docker compose config -q
       - name: install script
         run: bash -n adapters/warpgate/deploy/install.sh
+      - name: mail adapter image
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o adapters/mailpit/deploy/interpose-adapter-mailpit ./adapters/mailpit/cmd/interpose-adapter-mailpit
+          docker build -t interpose-adapter-mailpit:ci adapters/mailpit/deploy
+      - name: mail adapter compose file
+        working-directory: adapters/mailpit/deploy
+        run: cp adapter.env.default .env && docker compose config -q
+      - name: mail adapter install script
+        run: bash -n adapters/mailpit/deploy/install.sh
 
   ios:
     name: ApproverKit (swift test)
