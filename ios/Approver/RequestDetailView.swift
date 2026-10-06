@@ -54,8 +54,16 @@ struct RequestDetailView: View {
                     // fresh decision on the same record.
                     OutcomeText(outcome: outcome)
                 }
+                if let e = model.historyEntry(req.id), let approved = e.approved, let at = e.decidedAt {
+                    LabeledContent(approved ? "You approved" : "You denied") {
+                        Text(at, format: .dateTime.month().day().hour().minute())
+                    }
+                }
                 if r.isExpired() {
                     Text("Expired").foregroundStyle(.secondary)
+                } else if !model.requests.contains(where: { $0.id == req.id }) {
+                    // From the history: the hub no longer lists it, so there is nothing left to decide.
+                    if outcome?.isFinal != true { Text("No longer pending").foregroundStyle(.secondary) }
                 } else if !model.canApprove {
                     Text(model.membership == .removed
                          ? "This device was removed from its account: it can no longer decide."

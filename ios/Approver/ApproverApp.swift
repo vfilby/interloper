@@ -47,11 +47,13 @@ struct RootView: View {
     var body: some View {
         Group {
             if model.isEnrolled {
-                TabView {
-                    NavigationStack { InboxView() }
+                TabView(selection: $model.tab) {
+                    NavigationStack(path: $model.inboxPath) { InboxView() }
                         .tabItem { Label("Requests", systemImage: "tray") }
+                        .tag(Tab.requests)
                     NavigationStack { SettingsView() }
                         .tabItem { Label("Device", systemImage: "key") }
+                        .tag(Tab.device)
                 }
                 .task { await model.enablePush() }
                 .task(id: scenePhase) {

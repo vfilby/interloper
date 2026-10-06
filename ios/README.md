@@ -85,6 +85,16 @@ and app-password access control are not the real thing. A device uses the Secure
 The Keychain holds each key's `dataRepresentation` (a handle only this Secure Enclave can use) and the hub token.
 Adapter pins are public keys, kept in UserDefaults.
 
+## History and notifications
+
+- **History:** every request the app opens is kept in `history.json` in Application Support, newest first, capped at
+  500. Each entry holds the verified record, this device's decision, and the final ack. The file uses complete file
+  protection and is excluded from backup. Leaving the hub or resetting the device deletes it. The inbox lists entries
+  under History once they are no longer pending. Their detail screen is read-only.
+- **Tapping a notification:** a push carries no request id, only its thread (`requests` or `joins`). A tap switches
+  to Requests, pops any open screen, refreshes, and opens the newest request still waiting on this device (or the
+  newest join). With nothing waiting, it stays on the inbox.
+
 ## End-to-end UI test
 
 `scripts/e2e-ui.sh` (repository root) runs a real hub and the demo adapter on loopback. It then runs
@@ -94,6 +104,7 @@ Adapter pins are public keys, kept in UserDefaults.
    add-user`).
 2. The test opens a normal-risk request, taps Approve, and waits for the adapter's verified ack.
 3. It opens a high-risk request and checks that a tap does **not** approve it, then that a long press does.
+4. It relaunches the app and checks that both requests are still in History, with their confirmed outcome.
 
 The script checks the demo service's outcome afterwards. `scripts/e2e-cli.sh` is the same flow with the Go software
 device instead of the app.

@@ -42,12 +42,7 @@ enum Membership: Equatable {
     case removed   // was a member, no longer is
 }
 
-struct Decided: Identifiable, Equatable {
-    var id: String
-    var title: String
-    var approve: Bool
-    var at: Date
-}
+enum Tab: Hashable { case requests, device }
 
 @MainActor
 final class AppModel: ObservableObject {
@@ -59,11 +54,11 @@ final class AppModel: ObservableObject {
     @Published private(set) var adapters: [PinnedAdapter] = []
     @Published private(set) var conflicts: [AdapterConflict] = []
     @Published private(set) var requests: [OpenedRequest] = []
-    /// Every request opened this session, kept after the hub stops listing it so its detail screen can show the outcome.
-    private(set) var seen: [String: OpenedRequest] = [:]
+    /// Every request this device opened, newest first, on disk: kept after the hub stops listing it, and across
+    /// restarts, so it can be reviewed.
+    @Published private(set) var history: [HistoryEntry] = []
     @Published private(set) var refused: [String] = []
     @Published private(set) var outcomes: [String: Outcome] = [:]
-    @Published private(set) var decided: [Decided] = []
     @Published var lastError: String?
     @Published var pendingLink: EnrollmentLink?
 
@@ -82,6 +77,10 @@ final class AppModel: ObservableObject {
     /// first can turn into the second without two sheets colliding.
     @Published var sheet: Sheet?
 
+    /// Navigation, owned here so a tapped notification can open the request it is about.
+    @Published var tab: Tab = .requests
+    @Published var inboxPath = NavigationPath()
+
     enum Sheet: Identifiable, Equatable {
         case switchHub
         case summary(EnrollmentSummary)
@@ -94,6 +93,7 @@ final class AppModel: ObservableObject {
     }
 
     private let secrets = KeychainStorage()
+    private let historyFile = HistoryFile()
     private let defaults = UserDefaults.standard
     /// Hashes of the decisions sent per request, oldest first: a note counts only for the latest one.
     private var sentHashes: [String: [String]] = [:]
@@ -113,6 +113,8 @@ final class AppModel: ObservableObject {
         adapters = Self.loadPins(defaults)
         user = defaults.string(forKey: "user")
         account = defaults.string(forKey: "account")
+        history = historyFile.load()
+        for e in history { if let a = e.settled { outcomes[e.id] = .final(a) } }
     }
 
     var isEnrolled: Bool { hubURL != nil && token != nil && keys.hasKeys() }
@@ -338,7 +340,7 @@ final class AppModel: ObservableObject {
                 }
             }
             requests = opened.sorted { $0.record.createdAt > $1.record.createdAt }
-            for r in opened { seen[r.id] = r }
+            remember(opened)
             refused = bad
 
             applyAcks(try await client.acks(since: ackSince))
@@ -369,6 +371,7 @@ final class AppModel: ObservableObject {
             if outcomes[key]?.isFinal == true { continue }
             if ack.isFinal {
                 outcomes[key] = .final(ack)
+                updateHistory(key) { $0.settled = ack }
             } else if let latest = sentHashes[key]?.last, ack.decisionHash == latest {
                 outcomes[key] = .note(ack)
             }
@@ -390,8 +393,11 @@ final class AppModel: ObservableObject {
             sentHashes[req.id, default: []].append(B64.encode(sha256(try B64.decode(env.payload))))
             try await client.postDecision(DecisionPost(adapter: req.record.adapter, requestId: req.record.id, decision: env))
             outcomes[req.id] = .sent
-            decided.removeAll { $0.id == req.id }
-            decided.insert(Decided(id: req.id, title: req.record.title, approve: approve, at: Date()), at: 0)
+            remember([req])
+            updateHistory(req.id) {
+                $0.approved = approve
+                $0.decidedAt = Date()
+            }
             // The adapter usually answers within a second or two: poll quickly for the ack instead of waiting for the
             // regular 5 s cycle.
             for _ in 0..<15 {
@@ -401,6 +407,55 @@ final class AppModel: ObservableObject {
             }
         } catch {
             outcomes[req.id] = .failed(error.localizedDescription)
+        }
+    }
+
+    // MARK: history
+
+    func historyEntry(_ id: String) -> HistoryEntry? { history.first { $0.id == id } }
+
+    /// Adds requests not in the history yet.
+    private func remember(_ opened: [OpenedRequest]) {
+        let known = Set(history.map(\.id))
+        let new = opened.filter { !known.contains($0.id) }
+        guard !new.isEmpty else { return }
+        let now = Date()
+        history.append(contentsOf: new.map { HistoryEntry(request: $0, firstSeen: now) })
+        history.sort { $0.record.createdAt > $1.record.createdAt }
+        if history.count > HistoryFile.limit { history.removeLast(history.count - HistoryFile.limit) }
+        saveHistory()
+    }
+
+    private func updateHistory(_ id: String, _ change: (inout HistoryEntry) -> Void) {
+        guard let i = history.firstIndex(where: { $0.id == id }) else { return }
+        let before = history[i]
+        change(&history[i])
+        if history[i] != before { saveHistory() }
+    }
+
+    private func saveHistory() {
+        do {
+            try historyFile.save(history)
+        } catch {
+            lastError = "History not saved: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: notifications
+
+    /// A tapped notification: the push says only what kind it is ("requests" or "joins" thread), never which one, so
+    /// fetch and open the newest thing of that kind still waiting on this device. Nothing waiting: the inbox.
+    func openFromNotification(thread: String) async {
+        tab = .requests
+        inboxPath = NavigationPath()
+        await refresh()
+        guard inboxPath.isEmpty else { return } // the user went somewhere while it loaded
+        if thread == "joins" {
+            if let j = joins.first { inboxPath.append(JoinRoute(deviceID: j.deviceId)) }
+            return
+        }
+        if let r = requests.first(where: { !$0.record.isExpired() && outcomes[$0.id]?.allowsDecision ?? true }) {
+            inboxPath.append(r.id)
         }
     }
 
@@ -462,10 +517,11 @@ final class AppModel: ObservableObject {
         adapters = []
         conflicts = []
         requests = []
-        seen = [:]
+        history = []
+        historyFile.delete()
         refused = []
         outcomes = [:]
-        decided = []
+        inboxPath = NavigationPath()
         sentHashes = [:]
         ackSince = 0
         user = nil

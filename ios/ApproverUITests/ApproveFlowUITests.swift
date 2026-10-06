@@ -71,6 +71,20 @@ final class ApproveFlowUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["approved (confirmed by demo)"].waitForExistence(timeout: 20), "hold did not approve")
         attach(app, "approved-high")
 
+        // History survives a relaunch: both decisions are still there, with their confirmed outcome.
+        app.terminate()
+        app.launchArguments = []
+        app.launch()
+        let past = app.staticTexts["claude wants RW on db-01"]
+        XCTAssertTrue(past.waitForExistence(timeout: 10), "history lost on relaunch")
+        XCTAssertTrue(app.staticTexts["helper wants ADMIN on web-02"].exists, "history lost on relaunch")
+        attach(app, "history")
+        past.tap()
+        XCTAssertTrue(app.staticTexts["approved (confirmed by demo)"].waitForExistence(timeout: 5), "history lost the outcome")
+        XCTAssertFalse(app.buttons["Approve"].exists, "a past request offers Approve")
+        attach(app, "history-detail")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+
         // Re-enroll from the Device tab with a join code for vince (same hub: what you do after leaving it, or after the
         // hub forgot the device). This phone is already on vince's roster, so it comes back active at once. The code
         // can only exist now that vince does, so the test asks the management UI for it, as an admin would.

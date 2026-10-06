@@ -1,8 +1,9 @@
 import CryptoKit
 import Foundation
 
-/// A record that opened, verified against the pinned adapter key, and matched the hub's listing.
-public struct OpenedRequest: Identifiable, Equatable, Sendable {
+/// A record that opened, verified against the pinned adapter key, and matched the hub's listing. Codable so the app
+/// can keep what it already verified in its own history; nothing from the hub is ever decoded straight into one.
+public struct OpenedRequest: Identifiable, Equatable, Sendable, Codable {
     public var id: String { "\(record.adapter)/\(record.id)" }
     public var record: Record
     /// The exact signed payload bytes: the decision's record_hash covers these.

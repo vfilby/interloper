@@ -5,7 +5,11 @@ import UserNotifications
 /// sealed request over its usual connection, so a push carries no content to verify or leak.
 @MainActor
 final class PushDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
-    weak var model: AppModel?
+    weak var model: AppModel? {
+        didSet { openTapped() }
+    }
+    /// The thread of a notification tapped before the model was attached (a launch from the notification).
+    private var tapped: String?
 
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
@@ -29,8 +33,21 @@ final class PushDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCen
         return [.banner, .list, .sound]
     }
 
+    // Tapped: open what it is about.
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
-        await refresh()
+        let thread = response.notification.request.content.threadIdentifier
+        await tap(thread)
+    }
+
+    private func tap(_ thread: String) {
+        tapped = thread
+        openTapped()
+    }
+
+    private func openTapped() {
+        guard let model, let thread = tapped, model.isEnrolled else { return }
+        tapped = nil
+        Task { await model.openFromNotification(thread: thread) }
     }
 
     private func refresh() async { await model?.refresh() }

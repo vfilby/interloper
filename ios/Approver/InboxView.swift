@@ -29,8 +29,8 @@ struct InboxView: View {
                 }
             }
 
+            let live = model.requests.filter { !$0.record.isExpired(at: now) }
             Section("Pending") {
-                let live = model.requests.filter { !$0.record.isExpired(at: now) }
                 if live.isEmpty {
                     Text("Nothing waiting").foregroundStyle(.secondary)
                 }
@@ -39,25 +39,12 @@ struct InboxView: View {
                 }
             }
 
-            let expired = model.requests.filter { $0.record.isExpired(at: now) }
-            if !expired.isEmpty {
-                Section("Expired") {
-                    ForEach(expired) { req in RequestRow(req: req, now: now).opacity(0.4) }
-                }
-            }
-
-            if !model.decided.isEmpty {
-                Section("Decided here") {
-                    ForEach(model.decided) { d in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(sanitize(d.title)).lineLimit(1)
-                            HStack {
-                                Text(d.approve ? "Approved" : "Denied")
-                                Text("·")
-                                OutcomeText(outcome: model.outcomes[d.id])
-                            }
-                            .font(.footnote).foregroundStyle(.secondary)
-                        }
+            // Everything else this device has opened: decided, expired, or no longer listed by the hub.
+            let history = model.history.filter { e in !live.contains { $0.id == e.id } }
+            if !history.isEmpty {
+                Section("History") {
+                    ForEach(history) { e in
+                        NavigationLink(value: e.id) { HistoryRow(entry: e, outcome: model.outcomes[e.id], now: now) }
                     }
                 }
             }
@@ -78,7 +65,7 @@ struct InboxView: View {
         }
         .navigationTitle("Requests")
         .navigationDestination(for: String.self) { id in
-            if let req = model.requests.first(where: { $0.id == id }) ?? model.seen[id] {
+            if let req = model.requests.first(where: { $0.id == id }) ?? model.historyEntry(id)?.request {
                 RequestDetailView(req: req)
             } else {
                 Text("No longer pending").foregroundStyle(.secondary)
@@ -121,6 +108,38 @@ struct RequestRow: View {
                 Text(Date(timeIntervalSince1970: TimeInterval(r.expiresAt)), style: .relative)
             }
             .font(.footnote).foregroundStyle(.secondary)
+        }
+    }
+}
+
+struct HistoryRow: View {
+    let entry: HistoryEntry
+    let outcome: Outcome?
+    let now: Date
+
+    var body: some View {
+        let r = entry.record
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                if r.isHighRisk { Image(systemName: "exclamationmark.octagon.fill").foregroundStyle(.red) }
+                Text(sanitize(r.title)).lineLimit(2)
+            }
+            HStack(spacing: 6) {
+                if let approved = entry.approved {
+                    Text(approved ? "You approved" : "You denied")
+                    Text("·")
+                }
+                if let outcome {
+                    OutcomeText(outcome: outcome)
+                } else if r.isExpired(at: now) {
+                    Text("expired")
+                } else {
+                    Text("no outcome seen")
+                }
+            }
+            .font(.footnote).foregroundStyle(.secondary).lineLimit(1)
+            Text(Date(timeIntervalSince1970: TimeInterval(r.createdAt)), format: .dateTime.month().day().hour().minute())
+                .font(.caption).foregroundStyle(.tertiary)
         }
     }
 }
