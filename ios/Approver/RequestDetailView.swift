@@ -64,7 +64,11 @@ struct RequestDetailView: View {
                 } else if outcome?.allowsDecision ?? true {
                     if !model.isInsecure {
                         Toggle("Use app PIN instead of Face ID", isOn: $usePIN)
-                        if usePIN { SecureField("App PIN", text: $pin).keyboardType(.numberPad) }
+                        if usePIN {
+                            SecureField("App PIN", text: $pin)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                        }
                     }
                     if r.isHighRisk {
                         HoldToConfirmButton(title: "Hold to approve") { decide(true) }

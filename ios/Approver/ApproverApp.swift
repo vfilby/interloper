@@ -67,18 +67,46 @@ struct RootView: View {
                 NavigationStack { EnrollView() }
             }
         }
+        .pinPrompt()
         .sheet(item: $model.sheet, onDismiss: {
             // Cancelled a hub switch: drop the link it came with. (A finished one has already cleared it.)
             if model.sheet == nil { model.pendingLink = nil }
         }) { sheet in
             switch sheet {
             case .switchHub:
-                NavigationStack { EnrollView(switching: true) }.environmentObject(model)
+                NavigationStack { EnrollView(switching: true) }.pinPrompt().environmentObject(model)
             case .summary(let s):
                 EnrollmentSummaryView(summary: s).environmentObject(model)
             }
         }
     }
+}
+
+/// Asks for the app PIN when the model needs it (AppModel.withApproveKey). On the root and on sheets that sign.
+struct PINPromptModifier: ViewModifier {
+    @EnvironmentObject var model: AppModel
+    @State private var pin = ""
+
+    func body(content: Content) -> some View {
+        content.alert("App PIN", isPresented: Binding(get: { model.pinPrompt != nil }, set: { _ in }),
+                      presenting: model.pinPrompt) { p in
+            SecureField("App PIN", text: $pin)
+            Button("Continue") { answer(p, pin) }
+            Button("Cancel", role: .cancel) { answer(p, nil) }
+        } message: { p in
+            Text(p.message ?? "Face ID did not open the approve key. Enter the app PIN set when this device was connected (not the phone's passcode).")
+        }
+    }
+
+    private func answer(_ p: AppModel.PINPrompt, _ value: String?) {
+        pin = ""
+        if model.pinPrompt === p { model.pinPrompt = nil }
+        p.finish(value)
+    }
+}
+
+extension View {
+    func pinPrompt() -> some View { modifier(PINPromptModifier()) }
 }
 
 /// Shown on top of every screen when the keys are software keys (the simulator).

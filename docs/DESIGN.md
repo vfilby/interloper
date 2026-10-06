@@ -216,17 +216,34 @@ polling and policy, and decisions come from the phone through the hub.
 ### 2. iOS app
 
 - **Approval key**: Secure Enclave P-256, `kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly`, access control
-  `.privateKeyUsage` + `.applicationPassword`: the "PIN" is the app's own PIN, enforced by the Secure Enclave, **not**
-  the device passcode.
-  - Face ID: a copy of the PIN sits in a keychain item with `.biometryCurrentSet`. Approving reads it with Face ID and
-    hands it to the key in the same `LAContext`: one prompt. If Face ID fails or is cancelled, iOS asks for the PIN.
+  `.privateKeyUsage` + `.applicationPassword`. The application password is **32 random bytes** made at enrollment,
+  not anything a person types; the device passcode never opens the key. Two ways reach the password:
+  - Face ID: a copy sits in a keychain item with `.biometryCurrentSet`. Approving reads it with Face ID and hands it
+    to the key in the same `LAContext`: one prompt.
+  - App PIN: the password is stored XORed with PBKDF2-HMAC-SHA256(PIN, 16-byte salt, 600,000 iterations). The wrap
+    is not authenticated: every PIN unwraps to some password and only the Secure Enclave key tells the right one, so
+    the stored wrap gives nothing to guess against off the phone. New PINs need 8+ characters, letters allowed.
+  - iOS never asks for the password itself (nobody could type it): when Face ID fails or is cancelled, the app asks
+    for the PIN.
+  - Typed PINs are counted in app code (the Secure Enclave does not rate-limit application passwords). The failure
+    is written down before the key sees the PIN. 3 free mistakes, then lockouts of 1 min, 4 min, 16 min, ~1 h, ~4 h,
+    ~17 h; the 10th wrong PIN in a row deletes the keys (the device must then be removed from the account on another
+    phone and connect again). A right PIN or Face ID starts the count over.
+  - `biometryCurrentSet`: newly enrolled faces or fingers make the stored copy unreadable. The app also notes the
+    biometric domain state (`evaluatedPolicyDomainState` / `domainState.biometry`) when it saves the copy; after a
+    change Face ID stays off until the person turns it on in Settings, with the PIN, after a warning that every
+    enrolled face and finger will be able to approve. A typed PIN is never re-saved for Face ID silently.
   - Why not `[.biometryCurrentSet, .or, .applicationPassword]` on the key: iOS then asks for the password even after
     Face ID succeeds (seen on a real phone, 2026-10-04; a known, unanswered Apple forums issue), and the PIN alone
-    cannot sign. Keys made that way still work: the stored PIN supplies the password once the person has approved with
-    the PIN typed in the app.
-  - `biometryCurrentSet`: newly enrolled faces or fingers make the stored PIN unreadable, so a thief who knows the
-    passcode and adds their own face still needs the app PIN.
-  - Cost: the PIN passes through the app's memory when Face ID is used.
+    cannot sign. Keys made that way still work: the Face ID item supplies the password.
+  - **Keys made before 2026-10-06** have the app PIN itself as their password, and the Secure Enclave cannot change a
+    key's access control. They keep working and get the attempt counter, lockout, wipe and the Face ID change check;
+    the random password and the PBKDF2 wrap need new keys (Reset device, connect again; Settings says so).
+  - Limits: the counter, lockout and wipe are app code. Someone with the unlocked phone who also turns on Developer
+    Mode (needs the passcode) and attaches a debugger can skip them and try passwords on the key directly; each
+    guess then costs a PBKDF2 run plus a Secure Enclave operation, and the PIN's length is what bounds the attack.
+    Moving the clock forward shortens lockouts, but not the 10-failure wipe.
+  - Cost: the password passes through the app's memory.
 - **Deny key**: second SE key, device-unlocked only (no biometry). Deny is safe-direction but still signed.
 - **Decrypt key**: SE P-256 key-agreement key, no biometry, `AfterFirstUnlockThisDeviceOnly`, used by the Notification
   Service Extension to decrypt pushes.
@@ -313,8 +330,8 @@ HTTP target; that was not built.
 |---|---|
 | Agent approves its own request | Agent tokens have no admin rights; approver token is only on the Warpgate host; approval needs an SE signature |
 | Misleading reason ("read logs" on db-01-admin) | Authoritative fields (host, tier, requester, duration) shown first; reason labelled as the requester's claim |
-| Stolen unlocked phone | SE key requires Face ID or app PIN, enforced by the Secure Enclave rather than app code |
-| Thief knows the device passcode | `biometryCurrentSet` + separate app PIN |
+| Stolen unlocked phone | SE key needs its random application password, which only Face ID or the app PIN (PBKDF2-wrapped) unlock. Guessing the PIN is limited in app code: growing lockouts, keys deleted after 10 wrong PINs. A debugger (Developer Mode, needs the passcode) can skip the limit, so the PIN's length (8+ characters) bounds that |
+| Thief knows the device passcode | `biometryCurrentSet` + separate app PIN; a changed set of faces/fingers turns Face ID off until the PIN turns it back on, after a warning |
 | Hub / APNs / AWS IoT Core compromised | Records adapter-signed and sealed, decisions device-signed, nonce + timestamp prevent replay; worst case is DoS (fail closed) |
 | Hub's AWS credentials stolen (option B) | Can mint IoT transport identities only; they can't sign decisions |
 | Request swapped under an approval | Decision signs `record_hash`; adapter re-checks Warpgate state before approving |

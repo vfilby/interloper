@@ -113,6 +113,8 @@ This is not legal advice.
   connecting. Nothing is software-keyed as in the simulator. Hardware-only paths to watch:
   - key creation;
   - signing an approval;
-  - the PIN fallback;
+  - the PIN fallback (cancel Face ID: the app asks for the PIN), a wrong PIN's count and lockout;
+  - adding a face or finger: Face ID turns off for approvals, and Device → Use Face ID for approvals… turns it back on;
+  - a device connected before the random password (app PIN as the key's password) still approving;
   - Face ID being asked twice when connecting a new account (card, then first roster).
 - **Debug hooks:** none of the UI-test launch arguments exist in Release builds.
