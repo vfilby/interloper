@@ -49,9 +49,11 @@ func (a *API) Handler() http.Handler {
 	m.HandleFunc("POST /v1/adapter/acks", a.adapter(a.ack))
 	m.HandleFunc("GET /v1/adapter/rosters", a.adapter(a.adapterRosters))
 	m.HandleFunc("POST /v1/enroll", a.enroll)
-	m.HandleFunc("GET /v1/device/roster", a.device(a.deviceRoster))
+	// A device that asked to join and is not in its user's roster yet may only read the roster (to learn when it is
+	// admitted and show the account fingerprint) and withdraw; everything else waits for a member to admit it.
+	m.HandleFunc("GET /v1/device/roster", a.anyDevice(a.deviceRoster))
+	m.HandleFunc("POST /v1/device/leave", a.anyDevice(a.deviceLeave))
 	m.HandleFunc("POST /v1/device/roster", a.device(a.postRoster))
-	m.HandleFunc("POST /v1/device/leave", a.device(a.deviceLeave))
 	m.HandleFunc("POST /v1/device/push", a.device(a.devicePush))
 	m.HandleFunc("GET /v1/device/joins", a.device(a.deviceJoins))
 	m.HandleFunc("GET /v1/device/adapters", a.device(a.deviceAdapters))
@@ -81,7 +83,19 @@ func (a *API) adapter(h func(http.ResponseWriter, *http.Request, *Adapter)) http
 	}
 }
 
+// device serves admitted devices only: a join request nobody has approved gets 403.
 func (a *API) device(h func(http.ResponseWriter, *http.Request, *Device)) http.HandlerFunc {
+	return a.anyDevice(func(w http.ResponseWriter, r *http.Request, d *Device) {
+		if d.JoinRequested {
+			httpErr(w, http.StatusForbidden, "join not approved yet: a device of this account must admit this one")
+			return
+		}
+		h(w, r, d)
+	})
+}
+
+// anyDevice serves any device with a valid token, including a pending join request.
+func (a *API) anyDevice(h func(http.ResponseWriter, *http.Request, *Device)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		d, ok := a.Store.DeviceByToken(bearer(r), a.Now())
 		if !ok {
@@ -271,13 +285,18 @@ func (a *API) postRoster(w http.ResponseWriter, r *http.Request, d *Device) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// deviceLeave: the device goes away from the hub (Store.Leave). Its token stops working.
+// deviceLeave: the device goes away from the hub (Store.Leave). Its token stops working. A pending join request
+// may only withdraw itself.
 func (a *API) deviceLeave(w http.ResponseWriter, r *http.Request, d *Device) {
 	var in struct {
 		Roster        *protocol.Envelope `json:"roster,omitempty"`
 		DeleteAccount bool               `json:"delete_account,omitempty"`
 	}
 	if !readJSON(w, r, &in) {
+		return
+	}
+	if d.JoinRequested && (in.Roster != nil || in.DeleteAccount) {
+		httpErr(w, http.StatusForbidden, "join not approved yet: this device can only withdraw its request")
 		return
 	}
 	deleted, err := a.Store.Leave(d.ID, in.Roster, in.DeleteAccount)
