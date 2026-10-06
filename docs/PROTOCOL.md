@@ -177,7 +177,7 @@ A chain `[r1, r2, …, rn]` is valid only if all of these hold:
   - every card verifies (as in "Device card");
   - no device id appears twice.
 - **Unknown member kinds** make the roster invalid. `recovery` (an offline key that may sign roster updates but never
-  decisions) is reserved for a later version.
+  decisions) is reserved for a later version (see D16 in [DESIGN.md](DESIGN.md)).
 
 The **account fingerprint** pins a user. It is the first 16 bytes of SHA-256 over r1's payload bytes, as 8 groups of
 4 hex digits: `3f2a-91c0-77de-0b14-5c2e-aa01-9d3b-71f0`. The phone that made r1 shows it, and so does the hub. An adapter
