@@ -67,6 +67,29 @@ device (Face ID); this page can only hand out codes. Adapters trust users: <code
 {{end}}
 <p class="muted">On a phone you can also skip the code: in the Approver app, use <em>Sign in</em> on the Enroll screen.</p>
 
+{{if .Logins}}
+<details style="margin-top:.6rem"><summary>Sign-ins</summary>
+<p class="muted">The first time someone signs in, their username becomes their hub user id, bound to their account at the
+identity provider (issuer and subject). After that the hub knows them by that account, even if their username changes,
+and nobody else who takes the username gets the user id.</p>
+<table>
+  <tr><th>User</th><th>Username now</th><th>Subject</th><th>Bound</th><th></th></tr>
+  {{range .Logins}}
+  <tr>
+    <td>{{.User}}</td><td>{{.Username}}</td><td class="mono" title="{{.Issuer}}">{{.Subject}}</td><td>{{.BoundAt.Format "2006-01-02 15:04"}}</td>
+    <td><details><summary class="muted">Release…</summary>
+    <form method="post" action="/logins/{{.User}}/release">
+      <p class="muted">For when this person's account at the identity provider was recreated, or the hub moved to another
+      provider. The next person to sign in with username {{.User}} becomes hub user {{.User}}, with its devices.</p>
+      <p><label>Type <strong>{{.User}}</strong> to confirm <input type="text" name="confirm" autocomplete="off"></label>
+        <button>Release</button></p>
+    </form></details></td>
+  </tr>
+  {{end}}
+</table>
+</details>
+{{end}}
+
 <h2 id="devices">Devices at the hub</h2>
 {{if .Devices}}
 <table>

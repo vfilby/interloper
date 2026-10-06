@@ -24,7 +24,7 @@
 <body>
 <h1>{{.Title}}</h1>
 <nav><a href="/">Overview</a>{{if .Me.Admin}}<a href="/audit">Audit</a>{{end}}
-  <span class="muted" style="float: right">{{if .Me.User}}Signed in as <strong>{{.Me.User}}</strong>{{if .Me.Admin}} (admin){{end}}
+  <span class="muted" style="float: right">{{if .Me.User}}Signed in as <strong>{{.Me.User}}</strong>{{if .Me.Name}} (username {{.Me.Name}}){{end}}{{if .Me.Admin}} (admin){{end}}
   <form class="inline" method="post" action="/logout"><button>Sign out</button></form>{{else}}local mode: no sign-in (loopback only){{end}}</span></nav>
 {{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
 {{end}}

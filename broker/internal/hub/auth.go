@@ -21,14 +21,15 @@ import (
 
 // Identity is who is using the management UI.
 type Identity struct {
-	User  string `json:"u"` // hub user id; "" in local mode
-	Name  string `json:"n,omitempty"`
+	User  string `json:"u"`           // hub user id; "" in local mode
+	Name  string `json:"n,omitempty"` // username at the identity provider, when it is no longer the user id
 	Admin bool   `json:"a,omitempty"`
 }
 
 // Auth signs people in to the management UI with OIDC (authorization code + PKCE, state, nonce; the ID token is
-// verified by go-oidc against the issuer's keys: signature, issuer, audience, expiry). A user's id at the hub is
-// their username claim; membership of AdminGroup makes them an admin.
+// verified by go-oidc against the issuer's keys: signature, issuer, audience, expiry). A person is their (iss, sub):
+// the first time a subject signs in, its username claim becomes its hub user id, unless another subject holds that
+// already (Store.SignIn). Membership of AdminGroup makes them an admin.
 //
 // Signing in decides who may hand out enrollment codes and see what. It does not decide which devices can approve:
 // that is each user's roster, signed by their own phones (docs/PROTOCOL.md). So a compromised identity provider can
@@ -42,12 +43,18 @@ type Auth struct {
 	UserClaim  string        // default "preferred_username"
 	SessionTTL time.Duration // default 12h
 	Secure     bool          // cookies only over https (set when the redirect URL is https)
+	Logins     Logins        // binds subjects to user ids; Admin.Handler sets its Store
 
 	key      []byte // HMAC key for session and login cookies
 	oauth    oauth2.Config
 	provider *oidc.Provider
 	verifier *oidc.IDTokenVerifier
 	now      func() time.Time
+}
+
+// Logins binds OIDC subjects to hub user ids (Store.SignIn).
+type Logins interface {
+	SignIn(iss, sub, username string, now time.Time) (string, error)
 }
 
 const (
@@ -178,9 +185,9 @@ func (a *Auth) Callback(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, st.Next, http.StatusSeeOther)
 }
 
-// identity reads the username, name and groups from the ID token, or, when the token does not carry the username
+// identity reads the username and groups from the ID token, or, when the token does not carry the username
 // (Authelia since 4.39 puts profile and groups claims in the ID token only if a claims policy says so), from the
-// userinfo endpoint, whose subject must be the ID token's.
+// userinfo endpoint, whose subject must be the ID token's. The user id is the one bound to the token's subject.
 func (a *Auth) identity(ctx context.Context, idt *oidc.IDToken, tok *oauth2.Token) (Identity, error) {
 	var claims map[string]any
 	if err := idt.Claims(&claims); err != nil {
@@ -204,11 +211,17 @@ func (a *Auth) identity(ctx context.Context, idt *oidc.IDToken, tok *oauth2.Toke
 	}
 	u, _ := claims[claim].(string)
 	u = strings.ToLower(u)
-	if !protocol.ValidUserID(u) {
-		return Identity{}, fmt.Errorf("username %q (claim %s) is not usable as a hub user id (a-z 0-9 . _ -, up to 40)", u, claim)
+	if a.Logins == nil {
+		return Identity{}, errors.New("sign-in is not set up: no store for sign-in bindings")
 	}
-	id := Identity{User: u}
-	id.Name, _ = claims["name"].(string)
+	user, err := a.Logins.SignIn(idt.Issuer, idt.Subject, u, a.clock())
+	if err != nil {
+		return Identity{}, fmt.Errorf("sign-in as %q (claim %s): %w", u, claim, err)
+	}
+	id := Identity{User: user}
+	if u != user {
+		id.Name = u
+	}
 	if gs, ok := claims["groups"].([]any); ok {
 		for _, g := range gs {
 			if s, _ := g.(string); s != "" && s == a.AdminGroup {

@@ -100,5 +100,21 @@ interpose-hub \
 
 ## Usernames
 
-The hub user id is `preferred_username`, lower-cased, and must be 1–40 of `a-z 0-9 . _ -`. A username outside that
-is refused at sign-in with a message saying why.
+- **The first sign-in names the user.** The first time someone signs in, their `preferred_username`, lower-cased,
+  becomes their hub user id. It must be 1–40 of `a-z 0-9 . _ -`; a username outside that is refused at sign-in with a
+  message saying why.
+- **After that the hub knows them by their provider account, not their username.** The user id is bound to the
+  token's issuer and subject (`iss`, `sub`). OIDC does not promise a username is unique or stable, and some providers
+  let people edit their own.
+  - Someone who renames themselves keeps their hub user id. The header shows their new username next to it.
+  - Someone else who takes a username already bound to another account is refused at sign-in. They cannot become
+    that hub user, issue codes for it, revoke its phones or see its devices.
+- **When an existing hub is upgraded,** each user id is bound to whoever signs in with that username first. Accounts
+  that existed before are unaffected otherwise.
+- **To release a binding,** an admin opens *Sign-ins* on the overview. Releasing a user id unbinds it, so the next
+  person to sign in with that username becomes that hub user, with its devices. Use this when:
+  - a person's account at the provider was recreated, which gives it a new subject;
+  - the hub moves to another issuer, where every subject is new. Release each user id, then have the owners sign in
+    before anyone else can.
+- **Deleting an account** (break glass) keeps its sign-in binding. The same person can start a new account under the
+  same user id.
