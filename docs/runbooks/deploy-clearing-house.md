@@ -17,7 +17,8 @@ Run `interpose-hub` (`broker/cmd/interpose-hub`, [broker/README.md](../../broker
 - **the reverse proxy** sending `/v1/*` and `/healthz` to the API listener (`-api`, default `127.0.0.1:8740`;
   `0.0.0.0:8740` in a container) and everything else to the management UI (`-admin`, default `127.0.0.1:8741`;
   `0.0.0.0:8741` with OIDC). `-url` is the public base URL, e.g. `https://hub.home.example` (the hub refuses an http
-  `-url` with a non-loopback `-api`);
+  `-url` with a non-loopback `-api`). Give the proxy's address as `-trusted-proxy` (e.g. `127.0.0.1` or the Docker
+  network's CIDR) so failed enrollments are rate-limited per client rather than for everyone behind the proxy;
 - **OIDC** for the management UI and phone sign-in (`oidc.md`): `-oidc-issuer`, `-oidc-client-id`,
   `-oidc-secret-file`, `-oidc-redirect`, `-oidc-admin-group`;
 - **optionally APNs** for wake-up pushes (`testflight.md` step 5): `-apns-key-file`, `-apns-key-id`.

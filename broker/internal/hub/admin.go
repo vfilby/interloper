@@ -1,17 +1,20 @@
 package hub
 
 import (
-	"bufio"
+	"bytes"
 	"embed"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -440,28 +443,78 @@ func (a *Admin) removeAdapter(w http.ResponseWriter, r *http.Request) {
 	a.render(w, "index.html", a.overview(r, flash))
 }
 
-// audit shows the last 200 lines of the hub's audit log.
+// audit shows the last 200 lines of the hub's audit log, read from the end of the file.
 func (a *Admin) audit(w http.ResponseWriter, r *http.Request) {
 	p := page{Title: "Hub audit", Me: Who(r)}
-	if f, err := os.Open(a.AuditPath); err == nil {
-		defer f.Close()
-		var lines []string
-		sc := bufio.NewScanner(io.LimitReader(f, 16<<20))
-		for sc.Scan() {
-			lines = append(lines, sc.Text())
-			if len(lines) > 400 {
-				lines = lines[200:]
+	lines, note, err := tailLines(a.AuditPath, auditPageLines, auditTailMax)
+	switch {
+	case err != nil && !errors.Is(err, fs.ErrNotExist):
+		p.Flash = "Cannot read the audit log: " + err.Error()
+	case note != "":
+		p.Flash = note
+	}
+	slices.Reverse(lines)
+	p.Lines = lines
+	a.render(w, "audit.html", p)
+}
+
+const (
+	auditPageLines = 200
+	auditTailMax   = 16 << 20 // read at most this much of the end of the log
+	auditLineMax   = 4 << 10  // longer lines are shown cut, with their length
+)
+
+// tailLines returns the last n lines of a file, oldest first, reading back from the end in growing chunks but no
+// further than limit bytes. note says when that was not enough for n lines, so the page does not look complete.
+func tailLines(path string, n int, limit int64) (lines []string, note string, err error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, "", err
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return nil, "", err
+	}
+	size := fi.Size()
+	var buf []byte
+	for chunk := int64(64 << 10); ; chunk *= 4 {
+		start := max(0, size-min(chunk, limit))
+		buf = make([]byte, size-start)
+		if _, err := f.ReadAt(buf, start); err != nil && err != io.EOF {
+			return nil, "", err
+		}
+		if start > 0 {
+			// The first line may begin before the window; drop it unless the window holds nothing else.
+			if i := bytes.IndexByte(buf, '\n'); i >= 0 {
+				buf = buf[i+1:]
+			} else {
+				buf = nil
 			}
 		}
-		if len(lines) > 200 {
-			lines = lines[len(lines)-200:]
+		if bytes.Count(buf, []byte{'\n'}) >= n || start == 0 {
+			break
 		}
-		for i, j := 0, len(lines)-1; i < j; i, j = i+1, j-1 {
-			lines[i], lines[j] = lines[j], lines[i]
+		if size-start >= limit {
+			note = fmt.Sprintf("Showing only the events in the last %d MB of the audit log.", limit>>20)
+			break
 		}
-		p.Lines = lines
 	}
-	a.render(w, "audit.html", p)
+	for l := range bytes.Lines(buf) {
+		l = bytes.TrimSuffix(l, []byte{'\n'})
+		if len(l) == 0 {
+			continue
+		}
+		if len(l) > auditLineMax {
+			lines = append(lines, fmt.Sprintf("%s… [line cut: %d bytes]", strings.ToValidUTF8(string(l[:auditLineMax]), ""), len(l)))
+			continue
+		}
+		lines = append(lines, string(l))
+	}
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return lines, note, nil
 }
 
 func (a *Admin) write(e audit.Event) {

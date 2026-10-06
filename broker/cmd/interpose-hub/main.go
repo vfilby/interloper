@@ -6,6 +6,8 @@
 //	-admin 127.0.0.1:8741   management UI
 //	-url   https://…        the API base URL devices should use; goes into the enrollment link
 //	-state ./hub-data       state.json and audit.jsonl
+//	-trusted-proxy 127.0.0.1,10.0.0.0/8   reverse proxies whose X-Forwarded-For names the client (for the rate limit
+//	                        on failed enrollments; without it every client behind the proxy shares one limit)
 //
 // Sign-in to the management UI (and phone sign-in) is OIDC, e.g. Authelia (docs/runbooks/oidc.md):
 //
@@ -50,6 +52,7 @@ type config struct {
 	apiAddr, adminAddr, hubURL, stateDir                        string
 	issuer, clientID, secretFile, redirect, adminGroup, keyFile string
 	apnsKeyFile, apnsKeyID, apnsTeamID, apnsTopic               string
+	trustedProxy                                                string
 }
 
 func main() {
@@ -58,6 +61,7 @@ func main() {
 	flag.StringVar(&c.adminAddr, "admin", "127.0.0.1:8741", "management UI listen address")
 	flag.StringVar(&c.hubURL, "url", "http://127.0.0.1:8740", "API base URL as devices reach it (https unless -api is loopback)")
 	flag.StringVar(&c.stateDir, "state", "hub-data", "state directory")
+	flag.StringVar(&c.trustedProxy, "trusted-proxy", "", "comma-separated addresses or CIDRs of reverse proxies whose X-Forwarded-For names the client")
 	flag.StringVar(&c.issuer, "oidc-issuer", "", "OIDC issuer URL; empty: no sign-in (loopback only)")
 	flag.StringVar(&c.clientID, "oidc-client-id", "interpose", "OIDC client id")
 	flag.StringVar(&c.secretFile, "oidc-secret-file", "", "file holding the OIDC client secret")
@@ -80,6 +84,10 @@ func main() {
 func run(log *slog.Logger, c config) error {
 	if err := checkTransport(c); err != nil {
 		return err
+	}
+	proxies, err := hub.ParsePrefixes(c.trustedProxy)
+	if err != nil {
+		return fmt.Errorf("-trusted-proxy: %w", err)
 	}
 	if err := os.MkdirAll(c.stateDir, 0o700); err != nil {
 		return err
@@ -115,7 +123,7 @@ func run(log *slog.Logger, c config) error {
 	}
 	// Timeouts bound how long a slow client can hold a connection (MaxBytesReader bounds only bytes). The API's
 	// WriteTimeout leaves room for the decisions long-poll.
-	apiHandler := &hub.API{Store: st, Audit: a, Log: log, Push: push}
+	apiHandler := &hub.API{Store: st, Audit: a, Log: log, Push: push, TrustedProxies: proxies}
 	api := &http.Server{Addr: c.apiAddr, Handler: apiHandler.Handler(),
 		ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second,
 		WriteTimeout: apiHandler.MaxWait + 30*time.Second, IdleTimeout: 2 * time.Minute}

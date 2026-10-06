@@ -29,6 +29,7 @@ const (
 	MaxDecisionBytes       = 2 << 10
 	KeepResolved           = 24 * time.Hour
 	EnrollCodeTTL          = 10 * time.Minute
+	MaxDeviceName          = 100 // bytes; the name lands in state.json, the audit log and every page that lists devices
 )
 
 var (
@@ -345,6 +346,9 @@ func (st *Store) Enroll(code string, card protocol.Envelope, genesis *protocol.E
 	c, err := protocol.VerifyCard(card)
 	if err != nil {
 		return Enrolled{}, err
+	}
+	if len(c.Name) > MaxDeviceName {
+		return Enrolled{}, fmt.Errorf("device name longer than %d bytes", MaxDeviceName)
 	}
 	st.mu.Lock()
 	defer st.mu.Unlock()

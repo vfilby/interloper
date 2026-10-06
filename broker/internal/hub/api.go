@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"strconv"
 	"strings"
 	"time"
@@ -24,6 +25,10 @@ type API struct {
 	Now     func() time.Time
 	MaxWait time.Duration // cap on the decisions long-poll
 	Push    Pusher        // nil: no push notifications
+	// TrustedProxies are reverse proxies whose X-Forwarded-For names the client (for the enrollment rate limit).
+	TrustedProxies []netip.Prefix
+
+	enrollFails *failLimiter
 
 	pushed chan struct{} // tests: signalled after each background push batch
 }
@@ -34,6 +39,9 @@ func (a *API) Handler() http.Handler {
 	}
 	if a.MaxWait == 0 {
 		a.MaxWait = 30 * time.Second
+	}
+	if a.enrollFails == nil {
+		a.enrollFails = newFailLimiter(EnrollFailBurst, EnrollFailEvery)
 	}
 	m := http.NewServeMux()
 	m.HandleFunc("POST /v1/adapter/requests", a.adapter(a.publish))
@@ -178,18 +186,31 @@ func (a *API) ack(w http.ResponseWriter, r *http.Request, ad *Adapter) {
 }
 
 func (a *API) enroll(w http.ResponseWriter, r *http.Request) {
+	now := a.Now()
+	client := clientIP(r, a.TrustedProxies)
+	if ok, first := a.enrollFails.allow(client, now); !ok {
+		if first {
+			a.audit(audit.Event{Time: now, Event: "enroll-limited", Detail: "too many failed enrollments from " + client})
+		}
+		w.Header().Set("Retry-After", strconv.Itoa(int(EnrollFailEvery/time.Second)))
+		httpErr(w, http.StatusTooManyRequests, "too many failed enrollments: try again later")
+		return
+	}
 	var in struct {
 		Code    string             `json:"code"`
 		Card    protocol.Envelope  `json:"card"`
 		Genesis *protocol.Envelope `json:"genesis"`
 	}
 	if !readJSON(w, r, &in) {
+		a.enrollFails.fail(client, now)
 		return
 	}
-	now := a.Now()
 	e, err := a.Store.Enroll(in.Code, in.Card, in.Genesis, now)
 	if err != nil {
-		a.audit(audit.Event{Time: now, Event: "enroll-failed", Device: in.Card.Kid, Detail: err.Error()})
+		a.enrollFails.fail(client, now)
+		// Nothing here is authenticated: the card's kid is whatever the client sent, so it is clipped, not trusted.
+		a.audit(audit.Event{Time: now, Event: "enroll-failed", Device: clip(in.Card.Kid, 64),
+			Detail: clip(err.Error(), 200) + " (from " + client + ")"})
 		httpErr(w, http.StatusForbidden, err.Error())
 		return
 	}
