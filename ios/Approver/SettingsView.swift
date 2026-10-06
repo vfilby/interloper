@@ -27,22 +27,6 @@ struct SettingsView: View {
 
             AccountSection()
 
-            Section {
-                if let pk = try? model.keys.publicKeys() {
-                    LabeledContent("Device id") { Text(pk.deviceID).font(.footnote.monospaced()) }
-                    // This device's own fingerprint: compared when approving it from another device, and shown by the
-                    // hub. Adapters trust the account fingerprint, not this.
-                    LabeledContent("Device fingerprint") { Text(Fingerprint.of(pk.approve)).font(.footnote.monospaced().weight(.semibold)) }
-                    LabeledContent("Deny key") { Text(Fingerprint.of(pk.deny)).font(.footnote.monospaced()) }
-                    LabeledContent("Encryption key") { Text(Fingerprint.of(pk.enc)).font(.footnote.monospaced()) }
-                }
-                LabeledContent("Key store", value: model.keys.kind.rawValue)
-            } header: {
-                Text("This device")
-            } footer: {
-                Text("The device fingerprint (4 groups) identifies this phone, e.g. when another of your devices approves it. Adapters do not use it: they trust the account fingerprint above.")
-            }
-
             if !model.isInsecure { approvingSection }
 
             Section {

@@ -208,9 +208,18 @@ struct AccountSection: View {
         Section {
             if let head = model.head {
                 ForEach(head.roster.members.compactMap { head.devices[$0.card.kid] }, id: \.deviceId) { c in
+                    let isThis = c.deviceId == model.deviceID
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(sanitize(c.name) + (c.deviceId == model.deviceID ? " (this device)" : ""))
+                            HStack(spacing: 6) {
+                                Text(sanitize(c.name)).fontWeight(isThis ? .semibold : .regular)
+                                if isThis {
+                                    Text("This device").font(.caption.weight(.semibold)).foregroundStyle(.tint)
+                                        .padding(.horizontal, 6).padding(.vertical, 1)
+                                        .background(Capsule().fill(.tint.opacity(0.15)))
+                                        .accessibilityIdentifier("this-device-badge")
+                                }
+                            }
                             Text(fingerprint(c)).font(.footnote.monospaced()).foregroundStyle(.secondary)
                         }
                         Spacer()
@@ -219,15 +228,17 @@ struct AccountSection: View {
                                 .buttonStyle(.borderless)
                         }
                     }
+                    .listRowBackground(isThis ? Color.accentColor.opacity(0.08) : nil)
                 }
             } else {
                 Text("No verified device list yet.").foregroundStyle(.secondary)
             }
             if let error { Text(error).font(.footnote).foregroundStyle(.red) }
+            DisclosureGroup("This device's keys") { DeviceKeysRows() }
         } header: {
             Text("Devices on this account" + (model.head.map { " (roster \($0.roster.seq))" } ?? ""))
         } footer: {
-            Text("Removing signs a new device list on this phone (Face ID). Adapters stop accepting the removed device as soon as they see it. The last device cannot be removed.")
+            Text("Each device's fingerprint (4 groups) identifies it, e.g. when another of your devices approves it; adapters trust the account fingerprint above instead. Removing signs a new device list on this phone (Face ID). Adapters stop accepting the removed device as soon as they see it. The last device cannot be removed.")
         }
         .confirmationDialog("Remove \(removing.map { sanitize($0.name) } ?? "")?", isPresented: Binding(
             get: { removing != nil }, set: { if !$0 { removing = nil } }), titleVisibility: .visible) {
@@ -244,5 +255,21 @@ struct AccountSection: View {
 
     private func fingerprint(_ c: DeviceCard) -> String {
         (try? B64.decode(c.approveKey)).map(Fingerprint.of) ?? "?"
+    }
+}
+
+/// This device's own keys, for checking against the hub or another device: collapsed under the device list.
+struct DeviceKeysRows: View {
+    @EnvironmentObject var model: AppModel
+
+    var body: some View {
+        if let pk = try? model.keys.publicKeys() {
+            LabeledContent("Device id") { Text(pk.deviceID).font(.footnote.monospaced()) }
+            // The same fingerprint the device list shows for this device; adapters trust the account fingerprint.
+            LabeledContent("Approve key") { Text(Fingerprint.of(pk.approve)).font(.footnote.monospaced()) }
+            LabeledContent("Deny key") { Text(Fingerprint.of(pk.deny)).font(.footnote.monospaced()) }
+            LabeledContent("Encryption key") { Text(Fingerprint.of(pk.enc)).font(.footnote.monospaced()) }
+        }
+        LabeledContent("Key store", value: model.keys.kind.rawValue)
     }
 }
