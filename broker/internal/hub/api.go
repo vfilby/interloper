@@ -353,7 +353,14 @@ func (a *API) deviceDecide(w http.ResponseWriter, r *http.Request, d *Device) {
 		return
 	}
 	now := a.Now()
-	if err := a.Store.Decide(d.ID, in.Adapter, in.RequestID, in.Decision, now); err != nil {
+	switch err := a.Store.Decide(d.ID, in.Adapter, in.RequestID, in.Decision, now); {
+	case errors.Is(err, ErrBadDecision):
+		httpErr(w, http.StatusBadRequest, err.Error())
+		return
+	case errors.Is(err, ErrQueueFull):
+		httpErr(w, http.StatusTooManyRequests, err.Error())
+		return
+	case err != nil:
 		httpErr(w, http.StatusNotFound, err.Error())
 		return
 	}

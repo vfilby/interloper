@@ -226,7 +226,7 @@ reach different routes. Tokens are transport credentials: they stop LAN noise an
 | `GET /v1/device/joins` | device | `[{device_id, name, card, requested_at}]`: pending join requests for the device's user |
 | `GET /v1/device/adapters` | device | `[{id, key, fingerprint}]`: adapter keys to pin (trust on first use, fingerprints shown) |
 | `GET /v1/device/requests` | device | `[{id, adapter, kind, created_at, expires_at, box}]`: pending requests that have a box for this device |
-| `POST /v1/device/decisions` | device | `{adapter, request_id, decision: envelope}` |
+| `POST /v1/device/decisions` | device | `{adapter, request_id, decision: envelope}`. The hub checks the signature against the device's card and that the decision names this device, adapter and request (it cannot check the record hash: it never sees the record); otherwise 400. Envelopes over 2 KB are refused. A device has at most one decision queued per request: a newer one replaces it. At most 500 decisions are queued per adapter; past that, 429 until the adapter takes them. |
 | `GET /v1/device/acks?since=<unix>` | device | `[{adapter, request_id, ack: envelope}]`: acks and notes of the requests that were sealed for this device |
 
 The enrollment link the management UI shows as a QR code (and as text):

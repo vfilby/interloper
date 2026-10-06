@@ -23,15 +23,21 @@ import (
 const (
 	MaxPendingPerAdapter = 200
 	MaxBoxBytes          = 64 << 10
-	MaxDecisionsQueued   = 500
-	KeepResolved         = 24 * time.Hour
-	EnrollCodeTTL        = 10 * time.Minute
+	// Decisions: one queued per (device, request), a newer one replacing it; a cap per adapter, so a device can only
+	// crowd the queue of an adapter it has boxes from; and a size cap (a real one is well under 1 KB).
+	MaxDecisionsPerAdapter = 500
+	MaxDecisionBytes       = 2 << 10
+	KeepResolved           = 24 * time.Hour
+	EnrollCodeTTL          = 10 * time.Minute
 )
 
 var (
 	ErrUnknown  = errors.New("not found")
 	ErrTooMany  = errors.New("too many pending requests for this adapter")
 	ErrConflict = errors.New("already exists")
+
+	ErrBadDecision = errors.New("decision does not verify")
+	ErrQueueFull   = errors.New("decision queue for this adapter is full")
 )
 
 type Adapter struct {
@@ -721,8 +727,13 @@ func (st *Store) ForDevice(deviceID string, now time.Time) []Request {
 	return out
 }
 
-// Decide queues a device's decision for the adapter. The hub does not (and cannot meaningfully) judge it.
+// Decide queues a device's decision for the adapter. The hub cannot judge it (it never sees the record), but it checks
+// the signature against the device's card so it queues nothing a device did not sign for this adapter and request.
+// A device has at most one decision queued per request: a newer one replaces it.
 func (st *Store) Decide(deviceID, adapter, requestID string, d protocol.Envelope, now time.Time) error {
+	if len(d.Alg)+len(d.Kid)+len(d.Payload)+len(d.Sig) > MaxDecisionBytes {
+		return ErrBadDecision
+	}
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	r, ok := st.s.Requests[rkey(adapter, requestID)]
@@ -732,11 +743,35 @@ func (st *Store) Decide(deviceID, adapter, requestID string, d protocol.Envelope
 	if _, ok := r.Boxes[deviceID]; !ok {
 		return ErrUnknown
 	}
-	if len(st.s.Decisions) >= MaxDecisionsQueued {
-		return errors.New("decision queue full")
+	dev, ok := st.s.Devices[deviceID]
+	if !ok {
+		return ErrUnknown
+	}
+	card, err := protocol.VerifyCard(dev.Card)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrBadDecision, err)
+	}
+	if _, err := protocol.VerifyDecisionSignature(d, card, adapter, requestID); err != nil {
+		return fmt.Errorf("%w: %v", ErrBadDecision, err)
+	}
+	q := QueuedDecision{Adapter: adapter, RequestID: requestID, DeviceID: deviceID, Decision: d, At: now}
+	queued := 0
+	for i, x := range st.s.Decisions {
+		if x.Adapter != adapter {
+			continue
+		}
+		if x.RequestID == requestID && x.DeviceID == deviceID {
+			st.s.Decisions[i] = q
+			r.Decisions++
+			return st.commit()
+		}
+		queued++
+	}
+	if queued >= MaxDecisionsPerAdapter {
+		return ErrQueueFull
 	}
 	r.Decisions++
-	st.s.Decisions = append(st.s.Decisions, QueuedDecision{Adapter: adapter, RequestID: requestID, DeviceID: deviceID, Decision: d, At: now})
+	st.s.Decisions = append(st.s.Decisions, q)
 	return st.commit()
 }
 
