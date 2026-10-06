@@ -1,0 +1,31 @@
+# /opt/interpose-adapter-mailpit on the Mailpit host: the mail adapter of the clearing house, beside Mailpit and its
+# auto-release gate. Its own compose project, apart from the mail stack; restarting it touches neither.
+#
+# It holds what can act: a Mailpit login (which can release held mail) and the trust list (which accounts' phones may
+# decide). It only connects out: to the hub (HUB_URL) and to Mailpit's API (MAILPIT_URL). Settings: .env (install.sh
+# creates it once from adapter.env.default and never overwrites it).
+name: interpose-adapter-mailpit
+
+services:
+  adapter-mailpit:
+    build: .
+    image: interpose-adapter-mailpit:local
+    restart: unless-stopped
+    # Host network: Mailpit's API usually listens where a firewall admits only the reverse proxy, and loopback is the
+    # one address that always works. The adapter itself listens on nothing.
+    network_mode: host
+    user: "65534:65534" # not the Warpgate adapter's 65533
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 64m
+    pids_limit: 64
+    command: [run, "-id=${ADAPTER_ID:-mail}", -source=mailpit, -dir=/data, "-hub=${HUB_URL:?set HUB_URL in .env}",
+      -poll=5s, "-ttl=${REQUEST_TTL:-12h}"]
+    env_file: [.env]
+    volumes:
+      - ./data:/data # signing key, hub-token, trust list, open records, audit.jsonl
+      - ./secrets/mailpit-password:/run/secrets/mailpit-password:ro
+    logging:
+      driver: json-file
+      options: {max-size: "5m", max-file: "3"}
