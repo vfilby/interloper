@@ -1,6 +1,7 @@
 package policy
 
 import (
+	"math"
 	"testing"
 	"time"
 )
@@ -12,7 +13,8 @@ func TestEvaluate(t *testing.T) {
 		MaxDuration: map[Tier]time.Duration{TierRW: 2 * time.Hour, TierAdmin: 30 * time.Minute},
 		TTL:         15 * time.Minute,
 	}
-	dur := func(d time.Duration) *time.Duration { return &d }
+	dur := func(d time.Duration) *int64 { s := int64(d / time.Second); return &s }
+	secs := func(s int64) *int64 { return &s }
 	cases := []struct {
 		name   string
 		req    Request
@@ -31,6 +33,11 @@ func TestEvaluate(t *testing.T) {
 		{"bare suffix", Request{"claude", "-rw", dur(time.Hour), now}, true, "-rw is not an rw or admin tier", "-rw", ""},
 		{"no duration", Request{"claude", "db-01-rw", nil, now}, true, "no duration: the ticket would never expire", "db-01", TierRW},
 		{"over cap", Request{"claude", "files-01-admin", dur(2 * time.Hour), now}, true, "asks for 2h, over the 30m cap for admin", "files-01", TierAdmin},
+		{"overflows time.Duration", Request{"claude", "db-01-rw", secs(18446747674), now}, true, "asks for 18446747674s, over the 720h limit for any ticket", "db-01", TierRW},
+		{"max int64", Request{"claude", "db-01-rw", secs(math.MaxInt64), now}, true, "asks for 9223372036854775807s, over the 720h limit for any ticket", "db-01", TierRW},
+		{"zero", Request{"claude", "db-01-rw", secs(0), now}, true, "asks for 0s, not a duration", "db-01", TierRW},
+		{"negative", Request{"claude", "db-01-rw", secs(-3600), now}, true, "asks for -3600s, not a duration", "db-01", TierRW},
+		{"one second over cap", Request{"claude", "db-01-rw", secs(7201), now}, true, "asks for 2h, over the 2h cap for rw", "db-01", TierRW},
 		{"expired", Request{"claude", "files-01-rw", dur(time.Hour), now.Add(-16 * time.Minute)}, true, "unanswered for more than 15m", "files-01", TierRW},
 	}
 	for _, c := range cases {

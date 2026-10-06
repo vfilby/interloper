@@ -20,12 +20,26 @@ type Policy struct {
 	TTL         time.Duration          // unanswered longer than this: denied
 }
 
+// SanityMaxDuration bounds any requested duration, whatever the caps are set to.
+const SanityMaxDuration = 30 * 24 * time.Hour
+
 // Request is a ticket request with its ids resolved. Requester/Target are "" when Warpgate does not know the id.
 type Request struct {
 	Requester string
 	Target    string
-	Duration  *time.Duration // nil: the ticket would never expire
-	Created   time.Time
+	// DurationSeconds is Warpgate's requested_duration_seconds as the requester sent it. nil: the ticket would never
+	// expire. It stays in integer seconds until checked: time.Duration(s) * time.Second wraps for large s.
+	DurationSeconds *int64
+	Created         time.Time
+}
+
+// Duration is the requested duration, once Evaluate has allowed the request; ok is false when it is missing or out
+// of range, so it never wraps.
+func (r Request) Duration() (d time.Duration, ok bool) {
+	if r.DurationSeconds == nil || *r.DurationSeconds <= 0 || *r.DurationSeconds > int64(SanityMaxDuration/time.Second) {
+		return 0, false
+	}
+	return time.Duration(*r.DurationSeconds) * time.Second, true
 }
 
 type Verdict struct {
@@ -61,10 +75,15 @@ func (p Policy) Evaluate(r Request, now time.Time) Verdict {
 		return deny("target is not a Warpgate target")
 	case !ok:
 		return deny("%s is not an rw or admin tier", r.Target)
-	case r.Duration == nil:
+	case r.DurationSeconds == nil:
 		return deny("no duration: the ticket would never expire")
-	case *r.Duration > p.MaxDuration[tier]:
-		return deny("asks for %s, over the %s cap for %s", Human(*r.Duration), Human(p.MaxDuration[tier]), tier)
+	case *r.DurationSeconds <= 0:
+		return deny("asks for %ds, not a duration", *r.DurationSeconds)
+	case *r.DurationSeconds > int64(SanityMaxDuration/time.Second):
+		return deny("asks for %ds, over the %s limit for any ticket", *r.DurationSeconds, Human(SanityMaxDuration))
+	case *r.DurationSeconds > int64(p.MaxDuration[tier]/time.Second):
+		d, _ := r.Duration()
+		return deny("asks for %s, over the %s cap for %s", Human(d), Human(p.MaxDuration[tier]), tier)
 	case p.TTL > 0 && now.Sub(r.Created) > p.TTL:
 		return deny("unanswered for more than %s", Human(p.TTL))
 	}
