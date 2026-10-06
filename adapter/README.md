@@ -37,7 +37,14 @@ These hold for every adapter, in any language. The wire formats are in [docs/PRO
 7. **It fails closed.** Unanswered requests are denied at the service when they expire. An unreadable trust list stops
    publishing. A decision that does not verify does nothing.
 8. **It acknowledges** every outcome with a signed ack, so the phone can show what actually happened.
-9. **It keeps an audit log** (append-only JSON lines) of records, publications and outcomes.
+9. **It keeps an audit log** (append-only JSON lines) of records, publications and outcomes, and **does not let the
+   hub fill it**. Everything from the hub is bounded before it is written: at most 500 decisions are looked at per
+   long-poll; a decision whose request id or envelope `kid` does not have the form the adapter and devices make is
+   dropped unlogged; rejected decisions are logged (and, for a known request, acked) in a burst of 20 and then one
+   per 6 s, separately for unknown requests and for ones that failed verification; whatever is dropped is summed up in
+   one `decisions-not-logged` entry at most once a minute. A `decision-rejected` entry names the device the envelope
+   claims, marked `"unverified": true`, never the hub's `device_id`. The Go adapter starts a new `audit.jsonl` past
+   `-audit-max-mb` (64) and keeps `-audit-keep` (8) old ones as `audit.jsonl.1` (newest) to `audit.jsonl.8`.
 10. **It only connects out**, to the hub and to its service, and holds only that service's credential, scoped as
     narrowly as the service allows (Warpgate: a user whose only right is to manage ticket requests).
 

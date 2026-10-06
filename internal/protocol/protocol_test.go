@@ -177,3 +177,23 @@ func TestFingerprint(t *testing.T) {
 		t.Fatal(fp)
 	}
 }
+
+func TestIDForms(t *testing.T) {
+	d, _ := softdevice.New("phone")
+	if id := d.ID(); !protocol.IsDeviceID(id) {
+		t.Errorf("IsDeviceID(%q) = false", id)
+	}
+	if id := protocol.NewRequestID(); !protocol.IsRequestID(id) {
+		t.Errorf("IsRequestID(%q) = false", id)
+	}
+	for _, s := range []string{"", "0123456789abcde", "0123456789abcdef0", "0123456789ABCDEF", "0123-56789abcdef", "0123456789abcdeg"} {
+		if protocol.IsDeviceID(s) {
+			t.Errorf("IsDeviceID(%q) = true", s)
+		}
+	}
+	for _, s := range []string{"", "0123456789abcdef", "0123456789abcdef01234567x", "0123456789abcdef0123456Z", strings.Repeat("a", 4096)} {
+		if protocol.IsRequestID(s) {
+			t.Errorf("IsRequestID(%q) = true", s)
+		}
+	}
+}

@@ -173,6 +173,8 @@ func (c *cmd) run(args []string) error {
 	hubURL := fs.String("hub", "http://127.0.0.1:8740", "hub API base URL")
 	ttl := fs.Duration("ttl", 15*time.Minute, "how long a request stays answerable")
 	poll := fs.Duration("poll", 3*time.Second, "how often to poll the service")
+	auditMB := fs.Int64("audit-max-mb", 64, "start a new audit.jsonl past this many MiB (0: never)")
+	auditKeep := fs.Int("audit-keep", 8, "rotated audit files kept: audit.jsonl.1 (newest) … audit.jsonl.N")
 	_ = fs.Parse(args)
 	if *id == "" {
 		return errors.New("-id is required")
@@ -195,7 +197,7 @@ func (c *cmd) run(args []string) error {
 	if err != nil {
 		return err
 	}
-	a, err := audit.Open(filepath.Join(*dir, "audit.jsonl"))
+	a, err := audit.OpenRotating(filepath.Join(*dir, "audit.jsonl"), *auditMB<<20, *auditKeep)
 	if err != nil {
 		return err
 	}
