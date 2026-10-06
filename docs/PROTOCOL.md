@@ -191,6 +191,10 @@ Adding a device:
    the new phone.
 3. On approval (Face ID), that device builds the next roster from **its own verified copy** of the chain, adds the
    new card, signs it, and posts it.
+4. The new device sees a verified chain that includes it. It does not pin that chain's account fingerprint on sight:
+   the hub holds the join card and could have built a chain of its own around it. The person compares the fingerprint
+   with an existing device of the account; the new device pins it only once they confirm it matches, and acts as a
+   member only then.
 
 Removing a device is a next roster without it, signed on any current device.
 
@@ -232,7 +236,7 @@ join is not approved yet (enroll `status` `pending`) gets 403 on every device ro
 | `POST /v1/device/leave` | device (pending: plain leave only) | `{roster?, delete_account?}`: the device goes away and the hub deletes its record. `roster` is the next roster, without this device, signed by it: it takes itself off the account first. `delete_account` is only for the account's last device (its keys are going, so nothing could sign for the account again): the hub deletes the account. Neither: the roster is unchanged and the device may come back with a join code. |
 | `POST /v1/device/push` | device | `{token, environment}`: the device's APNs token (hex) and `production` or `development`; an empty token stops pushes. The hub pushes a fixed text, never request content: "Approval request" to the devices a request is sealed for, "New device" to an account's devices when another asks to join. |
 | `GET /v1/device/joins` | device | `[{device_id, name, card, requested_at}]`: pending join requests for the device's user |
-| `GET /v1/device/adapters` | device | `[{id, key, fingerprint}]`: adapter keys to pin (trust on first use, fingerprints shown) |
+| `GET /v1/device/adapters` | device | `[{id, key, fingerprint}]`: adapter keys, pinned once the person confirms each fingerprint |
 | `GET /v1/device/requests` | device | `[{id, adapter, kind, created_at, expires_at, box}]`: pending requests that have a box for this device |
 | `POST /v1/device/decisions` | device | `{adapter, request_id, decision: envelope}`. The hub checks the signature against the device's card and that the decision names this device, adapter and request (it cannot check the record hash: it never sees the record); otherwise 400. Envelopes over 2 KB are refused. A device has at most one decision queued per request: a newer one replaces it. At most 500 decisions are queued per adapter; past that, 429 until the adapter takes them. |
 | `GET /v1/device/acks?since=<unix>` | device | `[{adapter, request_id, ack: envelope}]`: acks and notes of the requests that were sealed for this device |

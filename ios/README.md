@@ -71,8 +71,14 @@ account, not single devices.
 
   That stops rollbacks, and forks signed by a device after it was removed (it keeps its key). The accepted head's
   seq and payload hash are persisted. A refused chain shows a red error and the last good head stays.
-- **Pinning on join:** a joining device pins the account fingerprint on the first verified chain that includes it.
-  Before that, the fingerprint is shown as unconfirmed.
+- **Pinning on join:** the hub holds the join card, so it could build a chain of its own (its own genesis, its own
+  device) around it. A joining device therefore never pins on the hub's say-so:
+  - before it is admitted, the hub's account fingerprint is shown only as unconfirmed, not to be given to an adapter;
+  - once a verified chain includes it, the inbox asks **Confirm the account**: open Device → Account on a phone already
+    on the account, and tap *It matches* only if both show the same fingerprint. Only then is it pinned and the device
+    acts as a member (Settings shows the fingerprint for `trust add-user`; the approving phone shows it on the join
+    screen too);
+  - *It is different* remembers that fingerprint as rejected: the device never pins it. Leave the hub.
 
 The simulator always uses **software keys** (orange INSECURE banner): it reports a Secure Enclave, but its Face ID
 and app-password access control are not the real thing. A device uses the Secure Enclave:
@@ -92,7 +98,13 @@ on top); Reset device and connect again to get a random password. Details and li
 
 The Keychain holds each key's `dataRepresentation` (a handle only this Secure Enclave can use), the PIN-wrapped
 password, the PIN failure count and the hub token.
-Adapter pins are public keys, kept in UserDefaults.
+The pins (account fingerprint, adapter keys, the last accepted roster head) are in the Keychain too, this device only,
+so a restored or edited backup cannot carry or change them. Older versions kept them in UserDefaults; they are moved on
+first launch.
+
+**Adapter keys** the hub lists are not pinned on first sight either: the inbox shows each new adapter with its
+fingerprint under "New adapters", and its requests wait until you compare that with what the adapter prints
+(`interpose-adapter key`) and tap Trust.
 
 ## End-to-end UI test
 
@@ -101,8 +113,11 @@ Adapter pins are public keys, kept in UserDefaults.
 1. The app enrolls from the link (`mode=new`), through the `-interposeAutoEnroll` launch argument (simulator Debug
    builds only). The script does the admin step: it trusts the new account at the adapter (`interpose-adapter trust
    add-user`).
-2. The test opens a normal-risk request, taps Approve, and waits for the adapter's verified ack.
+2. The test confirms the demo adapter's key (its requests wait until then), opens a normal-risk request, taps Approve, and waits for the adapter's verified ack.
 3. It opens a high-risk request and checks that a tap does **not** approve it, then that a long press does.
+4. A second test joins user ann, whose first device is the Go software device (the script admits every join for it).
+   It checks that the app shows no account fingerprint as the account's until the person taps *It matches*, then pins
+   it.
 
 The script checks the demo service's outcome afterwards. `scripts/e2e-cli.sh` is the same flow with the Go software
 device instead of the app.

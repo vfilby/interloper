@@ -47,6 +47,16 @@ final class ApproveFlowUITests: XCTestCase {
         attach(app, "enrolled")
         done.tap()
 
+        // The hub lists the demo adapter; its key is pinned only once confirmed here, and its requests wait until then.
+        XCTAssertFalse(app.staticTexts["claude wants RW on db-01"].waitForExistence(timeout: 3), "a request from an unconfirmed adapter")
+        let trust = app.buttons["Trust…"]
+        XCTAssertTrue(trust.waitForExistence(timeout: 20), "the hub's adapter is not offered for confirmation")
+        attach(app, "adapter-offered")
+        trust.tap()
+        let matches = app.buttons["It matches: trust it"]
+        XCTAssertTrue(matches.waitForExistence(timeout: 5), "no adapter confirmation")
+        matches.tap()
+
         // Normal risk: a plain Approve.
         let rw = app.staticTexts["claude wants RW on db-01"]
         XCTAssertTrue(rw.waitForExistence(timeout: 20), "request not in the inbox")
@@ -100,6 +110,46 @@ final class ApproveFlowUITests: XCTestCase {
         app.buttons["Leave hub"].tap()
         XCTAssertTrue(app.textFields["interpose-hub.home.example"].waitForExistence(timeout: 5), "leaving did not return to the server step")
         attach(app, "left-hub")
+    }
+
+    /// A phone joining an account whose first device is the Go software device (scripts/e2e-ui.sh creates user ann
+    /// and admits every join for it). Once admitted, the phone pins the account fingerprint only after the person says
+    /// it matches what their other device shows; until then it shows none to give an adapter.
+    func testJoinPinsTheAccountOnlyOnceConfirmed() throws {
+        let env = ProcessInfo.processInfo.environment
+        guard let admin = env["INTERPOSE_ADMIN_URL"], !admin.isEmpty, let account = env["INTERPOSE_ANN_ACCOUNT"], !account.isEmpty else {
+            throw XCTSkip("INTERPOSE_ADMIN_URL / INTERPOSE_ANN_ACCOUNT not set: needs a running hub and user ann")
+        }
+        let link = try joinLink(admin: admin, user: "ann")
+        let app = XCUIApplication()
+        app.launchArguments = ["-interposeReset", "-interposeAutoEnroll", link]
+        app.launch()
+
+        let done = app.buttons["Done"]
+        XCTAssertTrue(done.waitForExistence(timeout: 20), "enrollment summary did not appear")
+        XCTAssertFalse(app.staticTexts[account].exists, "the summary shows the account fingerprint before it is confirmed")
+        attach(app, "join-enrolled")
+        done.tap()
+
+        // Admitted by ann's software device: the inbox asks to compare the account fingerprint.
+        let matches = app.buttons["It matches"]
+        XCTAssertTrue(matches.waitForExistence(timeout: 30), "no account confirmation after admission")
+        XCTAssertEqual(app.staticTexts["unconfirmed-account"].label, account)
+        attach(app, "join-confirm-account")
+
+        app.tabBars.buttons["Device"].tap()
+        XCTAssertTrue(app.staticTexts["Not confirmed: compare it with your other device in the inbox."].waitForExistence(timeout: 5),
+                      "Settings does not say the account is unconfirmed")
+        XCTAssertFalse(app.staticTexts[account].exists, "Settings shows the unconfirmed account fingerprint as the account's")
+        attach(app, "join-settings-unconfirmed")
+
+        app.tabBars.buttons["Requests"].tap()
+        matches.tap()
+        app.tabBars.buttons["Device"].tap()
+        XCTAssertTrue(app.staticTexts[account].waitForExistence(timeout: 20), "the confirmed account fingerprint is not shown")
+        let roster = app.staticTexts.containing(NSPredicate(format: "label CONTAINS[c] 'on this account (roster 2)'")).firstMatch
+        XCTAssertTrue(roster.exists, "the verified roster is not shown")
+        attach(app, "join-settings-confirmed")
     }
 
     private func scrollTo(_ element: XCUIElement, in app: XCUIApplication) {

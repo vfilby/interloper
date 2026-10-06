@@ -43,7 +43,8 @@ What enforces that:
 ### Known limits
 
 - Off-network transport is not built: phones reach the hub on LAN or VPN.
-- The app pins adapter keys on first use; compare the fingerprint the adapter prints with the one on the phone.
+- Adapter keys and a joining phone's account fingerprint are pinned only once the person confirms them on the phone
+  (against what the adapter prints, or what another phone of the account shows); a careless tap still pins.
 - Verified so far in tests and the simulator. Not yet verified: Secure Enclave keys on hardware, the Warpgate source
   against a live Warpgate (it is tested through the client's request shapes).
 - One device is enough to change a roster (D16 in [docs/DESIGN.md](docs/DESIGN.md)): a phone stolen together with its

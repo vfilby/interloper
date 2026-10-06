@@ -21,19 +21,6 @@ enum Outcome: Equatable {
     }
 }
 
-struct PinnedAdapter: Identifiable, Equatable {
-    var id: String
-    var key: Data
-    var fingerprint: String { Fingerprint.of(key) }
-}
-
-/// A hub claim that disagrees with a pin: never used, always shown.
-struct AdapterConflict: Identifiable, Equatable {
-    var id: String
-    var pinned: String
-    var offered: String
-}
-
 /// This device's place in its user's roster, from the last verified head.
 enum Membership: Equatable {
     case unknown   // no verified roster yet
@@ -57,6 +44,10 @@ final class AppModel: ObservableObject {
     @Published private(set) var hubURL: URL?
     @Published private(set) var token: String?
     @Published private(set) var adapters: [PinnedAdapter] = []
+    /// Adapters the hub lists that are not pinned yet: shown with their fingerprint, used once confirmed (trustAdapter).
+    @Published private(set) var offeredAdapters: [PinnedAdapter] = []
+    /// Requests listed for an offered adapter: not opened until it is confirmed.
+    @Published private(set) var heldRequests = 0
     @Published private(set) var conflicts: [AdapterConflict] = []
     @Published private(set) var requests: [OpenedRequest] = []
     /// Every request opened this session, kept after the hub stops listing it so its detail screen can show the outcome.
@@ -69,10 +60,15 @@ final class AppModel: ObservableObject {
 
     // Account (docs/PROTOCOL.md "Users and rosters").
     @Published private(set) var user: String?
-    /// Pinned account fingerprint: set at genesis, or on first sight of a verified chain that includes this device.
+    /// Pinned account fingerprint: set at genesis, or, on a joining device, once the person confirmed that another
+    /// device of the account shows the same one (confirmAccount). Never from the hub's say-so alone: the hub holds the
+    /// join card, so it could put it on a chain of its own.
     @Published private(set) var account: String?
-    /// The account fingerprint of the hub's chain while this device is not yet a member (not pinned; for comparison).
+    /// The account fingerprint of the hub's chain while none is pinned: not trusted, never presented as one to pin.
     @Published private(set) var unconfirmedAccount: String?
+    /// The hub's chain includes this device but its account is not pinned: the person must compare unconfirmedAccount
+    /// with another device of the account before this device acts as a member.
+    @Published private(set) var accountNeedsConfirmation = false
     @Published private(set) var head: Head?
     @Published private(set) var membership: Membership = .unknown
     @Published private(set) var joins: [HubJoin] = []
@@ -94,6 +90,7 @@ final class AppModel: ObservableObject {
     }
 
     private let secrets = KeychainStorage()
+    private var pinStore: PinStore { PinStore(storage: secrets) }
     private let defaults = UserDefaults.standard
     /// Hashes of the decisions sent per request, oldest first: a note counts only for the latest one.
     private var sentHashes: [String: [String]] = [:]
@@ -102,6 +99,8 @@ final class AppModel: ObservableObject {
     struct EnrollmentSummary: Equatable {
         var deviceFingerprint: String
         var adapters: [PinnedAdapter]
+        /// Adapters the hub lists, not pinned until confirmed.
+        var offered: [PinnedAdapter]
         var user: String
         /// Pinned account fingerprint; nil while a join waits for approval.
         var account: String?
@@ -110,9 +109,14 @@ final class AppModel: ObservableObject {
     init() {
         hubURL = defaults.url(forKey: "hubURL")
         token = (try? secrets.get("hub.token")).flatMap { String(data: $0, encoding: .utf8) }
-        adapters = Self.loadPins(defaults)
         user = defaults.string(forKey: "user")
-        account = defaults.string(forKey: "account")
+        do {
+            try pinStore.migrate(from: defaults)
+            adapters = try pinStore.load(.adapters) ?? []
+            account = try pinStore.load(.account)
+        } catch {
+            lastError = "Pins could not be read from the Keychain: \(error.localizedDescription)"
+        }
         refreshKeyState()
     }
 
@@ -125,10 +129,7 @@ final class AppModel: ObservableObject {
     var deviceID: String? { try? device.deviceID() }
 
     /// The last head accepted (seq + payload hash), persisted: refuses rollbacks and forks across restarts.
-    private var knownHead: KnownHead? {
-        get { defaults.data(forKey: "knownHead").flatMap { try? JSONDecoder().decode(KnownHead.self, from: $0) } }
-        set { defaults.set(newValue.flatMap { try? JSONEncoder().encode($0) }, forKey: "knownHead") }
-    }
+    private func knownHead() throws -> KnownHead? { try pinStore.load(.knownHead) }
 
     private var client: HubClient? {
         guard let hubURL else { return nil }
@@ -204,45 +205,49 @@ final class AppModel: ObservableObject {
             self.user = user
             defaults.set(user, forKey: "user")
             if let genesis {
-                setAccount(accountFingerprint(genesisPayload: try B64.decode(genesis.payload)))
+                try setAccount(accountFingerprint(genesisPayload: try B64.decode(genesis.payload)))
             }
             await refreshRoster()
             await refreshAdapters() // only once a member: the hub serves a pending join its roster and nothing else
             pendingLink = nil
             sheet = .summary(EnrollmentSummary(deviceFingerprint: Fingerprint.of(try keys.publicKeys().approve),
-                                               adapters: adapters, user: user, account: account))
+                                               adapters: adapters, offered: offeredAdapters, user: user,
+                                               account: account))
         } catch {
             lastError = error.localizedDescription
         }
     }
 
-    private func setAccount(_ a: String?) {
+    private func setAccount(_ a: String?) throws {
+        try pinStore.save(.account, a)
         account = a
-        defaults.set(a, forKey: "account")
     }
 
-    /// Pins adapters the hub lists for the first time (trust on first use). A different key for a pinned id is a
+    /// Lists the adapters the hub knows. Keys for ids not pinned yet are only offered: the hub could have minted them,
+    /// so each is pinned when the person confirms its fingerprint (trustAdapter). A different key for a pinned id is a
     /// conflict: it is shown and never used.
     func refreshAdapters() async {
         guard let client, membership == .member else { return }
         do {
-            var pinned = adapters
-            var found: [AdapterConflict] = []
-            for a in try await client.adapters() {
-                let key = try B64.decode(a.key)
-                guard key.count == 32 else { continue }
-                if let p = pinned.first(where: { $0.id == a.id }) {
-                    if p.key != key { found.append(AdapterConflict(id: a.id, pinned: p.fingerprint, offered: Fingerprint.of(key))) }
-                } else {
-                    pinned.append(PinnedAdapter(id: a.id, key: key))
-                }
-            }
-            adapters = pinned.sorted { $0.id < $1.id }
-            conflicts = found
-            Self.savePins(adapters, defaults)
+            (offeredAdapters, conflicts) = sortAdapters(try await client.adapters(), pinned: adapters)
         } catch {
             lastError = error.localizedDescription
         }
+    }
+
+    /// Pins an offered adapter key, once the person compared its fingerprint with the one the adapter prints.
+    func trustAdapter(_ a: PinnedAdapter) async {
+        guard offeredAdapters.contains(a), !adapters.contains(where: { $0.id == a.id }) else { return }
+        let pinned = (adapters + [a]).sorted { $0.id < $1.id }
+        do {
+            try pinStore.save(.adapters, pinned)
+        } catch {
+            lastError = "Pin not saved: \(error.localizedDescription)"
+            return
+        }
+        adapters = pinned
+        offeredAdapters.removeAll { $0.id == a.id }
+        await refresh()
     }
 
     // MARK: roster
@@ -258,19 +263,22 @@ final class AppModel: ObservableObject {
             let me = try device.deviceID()
             let inHead = h.devices[me] != nil
             if account == nil {
-                guard inHead else {
-                    // Not a member yet: show the hub's account fingerprint for comparison, pin nothing.
-                    unconfirmedAccount = h.account
-                    membership = .pending
-                    rosterError = nil
-                    return
-                }
-                setAccount(h.account) // first verified chain that includes this device
-                unconfirmedAccount = nil
+                // Nothing pinned yet (a join): the chain verifies, but the hub could have built it, genesis included,
+                // around this device's card. Pin nothing; once it includes this device, the person compares its
+                // account fingerprint with another device of the account (confirmAccount).
+                let rejected: String? = try pinStore.load(.rejectedAccount)
+                unconfirmedAccount = h.account
+                accountNeedsConfirmation = inHead && h.account != rejected
+                membership = .pending
+                rosterError = h.account == rejected
+                    ? "You said your other device shows a different account fingerprint than \(h.account). This hub may be "
+                        + "serving a device list of its own: do not give that fingerprint to an adapter. Leave this hub."
+                    : nil
+                return
             }
-            try requireBuildsOn(r.chain, known: knownHead)
+            try requireBuildsOn(r.chain, known: try knownHead())
+            try pinStore.save(.knownHead, KnownHead(h))
             head = h
-            knownHead = KnownHead(h)
             if inHead {
                 membership = .member
                 defaults.set(true, forKey: "wasMember")
@@ -290,6 +298,32 @@ final class AppModel: ObservableObject {
     func refreshJoins() async {
         guard let client, membership == .member else { joins = []; return }
         if let j = try? await client.joins() { joins = j }
+    }
+
+    /// The person compared the hub's account fingerprint with another device of the account and it matches: pin it.
+    func confirmAccount(_ a: String) async {
+        guard account == nil, accountNeedsConfirmation, a == unconfirmedAccount else { return }
+        do {
+            try setAccount(a)
+        } catch {
+            lastError = "Account not pinned: \(error.localizedDescription)"
+            return
+        }
+        unconfirmedAccount = nil
+        accountNeedsConfirmation = false
+        await refresh()
+    }
+
+    /// The person's other device shows a different account fingerprint: never pin this one.
+    func rejectAccount(_ a: String) async {
+        guard account == nil, a == unconfirmedAccount else { return }
+        do {
+            try pinStore.save(.rejectedAccount, a)
+        } catch {
+            lastError = error.localizedDescription
+            return
+        }
+        await refreshRoster()
     }
 
     /// Admits a device asking to join: next roster = verified head + its card, signed here (Face ID).
@@ -320,7 +354,7 @@ final class AppModel: ObservableObject {
         guard let client, let user, let account else { throw ProtocolError.untrusted("no pinned account") }
         let r = try await client.roster()
         let h = try verifyChain(r.chain, user: user, account: account)
-        try requireBuildsOn(r.chain, known: knownHead)
+        try requireBuildsOn(r.chain, known: try knownHead())
         guard h.devices[try device.deviceID()] != nil else { throw ProtocolError.untrusted("this device is not a member") }
         let keys = self.keys
         let env = try await withApproveKey(pin: pin) { pin in try build(Device(keys: keys), h, pin) }
@@ -344,7 +378,12 @@ final class AppModel: ObservableObject {
         do {
             var opened: [OpenedRequest] = []
             var bad: [String] = []
+            var held = 0
             for l in try await client.requests() {
+                if pins[l.adapter] == nil, offeredAdapters.contains(where: { $0.id == l.adapter }) {
+                    held += 1 // its adapter's key is not confirmed yet
+                    continue
+                }
                 do {
                     opened.append(try device.open(l, pinned: pins))
                 } catch {
@@ -354,6 +393,7 @@ final class AppModel: ObservableObject {
             requests = opened.sorted { $0.record.createdAt > $1.record.createdAt }
             for r in opened { seen[r.id] = r }
             refused = bad
+            heldRequests = held
 
             applyAcks(try await client.acks(since: ackSince))
             lastError = nil
@@ -560,10 +600,12 @@ final class AppModel: ObservableObject {
     private func forgetHub() {
         try? secrets.delete("hub.token")
         defaults.removeObject(forKey: "hubURL")
-        defaults.removeObject(forKey: "pinnedAdapters")
+        try? pinStore.clear()
         hubURL = nil
         token = nil
         adapters = []
+        offeredAdapters = []
+        heldRequests = 0
         conflicts = []
         requests = []
         seen = [:]
@@ -573,25 +615,14 @@ final class AppModel: ObservableObject {
         sentHashes = [:]
         ackSince = 0
         user = nil
-        setAccount(nil)
+        account = nil
         unconfirmedAccount = nil
+        accountNeedsConfirmation = false
         head = nil
         membership = .unknown
         joins = []
         rosterError = nil
         defaults.removeObject(forKey: "user")
-        defaults.removeObject(forKey: "knownHead")
         defaults.removeObject(forKey: "wasMember")
-    }
-
-    // MARK: pins on disk (public keys: UserDefaults is enough)
-
-    private static func loadPins(_ d: UserDefaults) -> [PinnedAdapter] {
-        guard let m = d.dictionary(forKey: "pinnedAdapters") as? [String: String] else { return [] }
-        return m.compactMap { id, k in (try? B64.decode(k)).map { PinnedAdapter(id: id, key: $0) } }.sorted { $0.id < $1.id }
-    }
-
-    private static func savePins(_ a: [PinnedAdapter], _ d: UserDefaults) {
-        d.set(Dictionary(uniqueKeysWithValues: a.map { ($0.id, B64.encode($0.key)) }), forKey: "pinnedAdapters")
     }
 }

@@ -24,15 +24,17 @@ struct MembershipBanner: View {
             }
         }
         switch model.membership {
+        case .pending where model.accountNeedsConfirmation:
+            if let a = model.unconfirmedAccount { ConfirmAccountSection(account: a) }
         case .pending:
             Section {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Waiting for approval on another of \(model.user ?? "the account")'s devices.").font(.headline)
                     Text("This device's fingerprint — compare it there:").font(.footnote)
                     Text(model.deviceFingerprint ?? "—").font(.title3.monospaced().weight(.semibold))
-                    if let a = model.unconfirmedAccount {
-                        Text("Account fingerprint (unconfirmed until approved): \(a)").font(.caption.monospaced())
-                            .foregroundStyle(.secondary)
+                    if let a = model.unconfirmedAccount, model.rosterError == nil {
+                        Text("The hub's account fingerprint, not confirmed: \(a). After approval you compare it with your other device; do not give it to an adapter before.")
+                            .font(.caption).foregroundStyle(.secondary)
                     }
                 }
             }
@@ -44,6 +46,79 @@ struct MembershipBanner: View {
             }
         case .member, .unknown:
             EmptyView()
+        }
+    }
+}
+
+/// A joining device the hub's chain includes: the person compares the account fingerprint with a device already on the
+/// account before it is pinned. The hub holds this device's card, so a chain of its own could include it too.
+struct ConfirmAccountSection: View {
+    @EnvironmentObject var model: AppModel
+    let account: String
+    @State private var working = false
+
+    var body: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Confirm the account").font(.headline)
+                Text("On a phone already on \(model.user ?? "the account"), open Device → Account. Does it show this account fingerprint?")
+                    .font(.footnote)
+                Text(account).font(.body.monospaced().weight(.semibold))
+                    .accessibilityIdentifier("unconfirmed-account")
+            }
+            Button {
+                working = true
+                Task { await model.confirmAccount(account); working = false }
+            } label: {
+                Label("It matches", systemImage: "checkmark.shield")
+            }
+            .disabled(working)
+            Button(role: .destructive) {
+                working = true
+                Task { await model.rejectAccount(account); working = false }
+            } label: {
+                Label("It is different", systemImage: "xmark.shield")
+            }
+            .disabled(working)
+        } footer: {
+            Text("Until you confirm, this device approves nothing and shows no account fingerprint to give an adapter. If they differ, the hub may have built a device list of its own: do not trust it anywhere, and leave this hub.")
+        }
+        .listRowBackground(Color.orange.opacity(0.15))
+    }
+}
+
+/// Adapters the hub lists that are not pinned yet: pinned once the person compares the fingerprint with the adapter's.
+struct OfferedAdaptersSection: View {
+    @EnvironmentObject var model: AppModel
+    @State private var trusting: PinnedAdapter?
+
+    var body: some View {
+        if !model.offeredAdapters.isEmpty {
+            Section {
+                ForEach(model.offeredAdapters) { a in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(sanitize(a.id))
+                            Text(a.fingerprint).font(.footnote.monospaced()).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button("Trust…") { trusting = a }.buttonStyle(.borderless)
+                    }
+                }
+            } header: {
+                Text("New adapters" + (model.heldRequests > 0 ? " (\(model.heldRequests) requests waiting)" : ""))
+            } footer: {
+                Text("The hub lists these adapters. Trust one only if its fingerprint matches what the adapter prints (`interpose-adapter key`, or its log at start); its requests show after that.")
+            }
+            .confirmationDialog("Does \(trusting.map { sanitize($0.id) } ?? "") print \(trusting?.fingerprint ?? "")?",
+                                isPresented: Binding(get: { trusting != nil }, set: { if !$0 { trusting = nil } }),
+                                titleVisibility: .visible) {
+                Button("It matches: trust it") {
+                    guard let a = trusting else { return }
+                    Task { await model.trustAdapter(a) }
+                }
+                Button("Cancel", role: .cancel) {}
+            }
         }
     }
 }
@@ -65,6 +140,15 @@ struct JoinDetailView: View {
                 Text("Asking to join \(model.user ?? "")")
             } footer: {
                 Text("Compare with the new phone's screen. Approve only if they match and you are adding that phone yourself: an approved device can approve everything this account can.")
+            }
+            if let a = model.account {
+                Section {
+                    Text(a).font(.body.monospaced().weight(.semibold))
+                } header: {
+                    Text("Account fingerprint")
+                } footer: {
+                    Text("After approval the new phone asks whether this phone shows the same account fingerprint. Check it there.")
+                }
             }
             Section {
                 Button {
@@ -110,6 +194,8 @@ struct AccountSection: View {
                     Text(a).font(.body.monospaced().weight(.semibold))
                         .textSelection(.enabled) // long-press to copy
                 }
+            } else if model.accountNeedsConfirmation {
+                Text("Not confirmed: compare it with your other device in the inbox.").foregroundStyle(.orange)
             } else {
                 Text("Not confirmed yet (waiting for approval).").foregroundStyle(.orange)
             }
