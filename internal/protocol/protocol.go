@@ -343,14 +343,15 @@ func VerifyCard(e Envelope) (DeviceCard, error) {
 	return c, nil
 }
 
-// VerifyDecision checks a decision envelope against a pinned device card and the record it answers. It does not
-// check nonce reuse or the service's state: that is the adapter's job.
-func VerifyDecision(e Envelope, card DeviceCard, adapter string, recordPayload []byte, rec Record, now time.Time) (Decision, error) {
+// VerifyDecisionSignature checks what can be checked of a decision without the record: the signature against the
+// device card (approve needs the approve key; deny accepts either), the version, and that it names this device, adapter
+// and request. The hub uses it to refuse junk; VerifyDecision builds on it.
+func VerifyDecisionSignature(e Envelope, card DeviceCard, adapter, requestID string) (Decision, error) {
 	var d Decision
 	if e.Kid != card.DeviceID {
 		return d, errors.New("decision signed by a different device than claimed")
 	}
-	// Approve needs the approve key; deny accepts either. Try the approve key first.
+	// Try the approve key first.
 	ak, _ := UnB64(card.ApproveKey)
 	dk, _ := UnB64(card.DenyKey)
 	p, err := VerifyES256(e, ak)
@@ -370,16 +371,28 @@ func VerifyDecision(e Envelope, card DeviceCard, adapter string, recordPayload [
 		return d, errors.New("decision names another device")
 	case d.Adapter != adapter:
 		return d, fmt.Errorf("decision is for adapter %q", d.Adapter)
-	case d.RequestID != rec.ID:
+	case d.RequestID != requestID:
 		return d, errors.New("decision is for another request")
-	case d.RecordHash != B64(Hash(recordPayload)):
-		return d, errors.New("decision signs a different record than the one sent")
-	case d.Nonce != rec.Nonce:
-		return d, errors.New("decision nonce does not match the record")
 	case d.Decision != Approve && d.Decision != Deny:
 		return d, fmt.Errorf("unknown decision %q", d.Decision)
 	case d.Decision == Approve && !byApprove:
 		return d, errors.New("approve not signed with the approve key")
+	}
+	return d, nil
+}
+
+// VerifyDecision checks a decision envelope against a pinned device card and the record it answers. It does not
+// check nonce reuse or the service's state: that is the adapter's job.
+func VerifyDecision(e Envelope, card DeviceCard, adapter string, recordPayload []byte, rec Record, now time.Time) (Decision, error) {
+	d, err := VerifyDecisionSignature(e, card, adapter, rec.ID)
+	if err != nil {
+		return d, err
+	}
+	switch {
+	case d.RecordHash != B64(Hash(recordPayload)):
+		return d, errors.New("decision signs a different record than the one sent")
+	case d.Nonce != rec.Nonce:
+		return d, errors.New("decision nonce does not match the record")
 	case now.Sub(time.Unix(d.TS, 0)).Abs() > MaxSkew:
 		return d, errors.New("decision timestamp outside the allowed window")
 	case now.Unix() > rec.ExpiresAt:
