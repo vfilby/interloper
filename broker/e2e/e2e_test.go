@@ -15,6 +15,7 @@ import (
 	"github.com/vfilby/interpose/adapter"
 	"github.com/vfilby/interpose/adapter/demo"
 	"github.com/vfilby/interpose/broker/internal/hub"
+	"github.com/vfilby/interpose/internal/audit"
 	"github.com/vfilby/interpose/internal/protocol"
 	"github.com/vfilby/interpose/internal/softdevice"
 )
@@ -32,6 +33,7 @@ type world struct {
 	adPub   ed25519.PublicKey
 	srvURL  string
 	account string
+	audit   string // the adapter's audit.jsonl
 
 	phone    *softdevice.Device
 	phoneHub *softdevice.Client
@@ -114,8 +116,14 @@ func newWorld(t *testing.T) *world {
 		t.Fatal(err)
 	}
 	w.src = demo.New()
+	w.audit = filepath.Join(dir, "audit.jsonl")
+	al, err := audit.Open(w.audit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { al.Close() })
 	w.ad, err = adapter.New(adapter.Config{ID: "demo", Key: key, StateFile: filepath.Join(dir, "adapter.json"),
-		TTL: 15 * time.Minute, Poll: time.Hour, Now: w.clock}, w.src, w.adHub, trust, nil,
+		TTL: 15 * time.Minute, Poll: time.Hour, Now: w.clock}, w.src, w.adHub, trust, al,
 		slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)

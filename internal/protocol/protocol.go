@@ -49,6 +49,21 @@ func Fingerprint(raw []byte) string {
 // DeviceID is the fingerprint of the approve key without dashes.
 func DeviceID(approveKey []byte) string { return strings.ReplaceAll(Fingerprint(approveKey), "-", "") }
 
+// IsDeviceID reports whether s has the form of a DeviceID: 16 lowercase hex digits.
+func IsDeviceID(s string) bool { return len(s) == 16 && isLowerHex(s) }
+
+// IsRequestID reports whether s has the form NewRequestID makes: 24 lowercase hex digits.
+func IsRequestID(s string) bool { return len(s) == 24 && isLowerHex(s) }
+
+func isLowerHex(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if c := s[i]; (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
 // Hash is SHA-256.
 func Hash(b []byte) []byte {
 	h := sha256.Sum256(b)

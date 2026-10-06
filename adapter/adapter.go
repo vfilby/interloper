@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -75,6 +76,64 @@ type Adapter struct {
 
 	mu   sync.Mutex
 	open map[string]*open // by record id
+
+	limMu     sync.Mutex
+	unknown   bucket    // audit entries for decisions naming no open request
+	rejected  bucket    // audit entries and acks for decisions that failed verification
+	notLogged notLogged // what the hub sent that was dropped without an audit entry of its own
+	reported  time.Time // when notLogged was last written out
+}
+
+// What the hub can make the adapter write. The hub is not trusted, and everything it sends could be junk; without
+// these bounds it could fill the service host's disk with audit entries (one fsync each) and keep the adapter busy
+// signing acks. An honest hub stays well inside them.
+const (
+	// MaxDecisionsPerPoll is how many decisions from one long-poll answer are looked at; the rest are dropped. The
+	// hub queues at most 500 per adapter.
+	MaxDecisionsPerPoll = 500
+	// Each kind of rejection gets a burst of rejectBurst audit entries, then one per rejectEvery.
+	rejectBurst = 20
+	rejectEvery = 6 * time.Second
+	// Dropped decisions are summed up in one audit entry at most this often.
+	reportEvery = time.Minute
+)
+
+// bucket is a token bucket over the adapter's clock.
+type bucket struct {
+	tokens float64
+	last   time.Time
+}
+
+func (b *bucket) take(now time.Time) bool {
+	if b.last.IsZero() {
+		b.tokens = rejectBurst
+	} else if dt := now.Sub(b.last); dt > 0 {
+		b.tokens = min(rejectBurst, b.tokens+dt.Seconds()/rejectEvery.Seconds())
+	}
+	b.last = now
+	if b.tokens < 1 {
+		return false
+	}
+	b.tokens--
+	return true
+}
+
+type notLogged struct {
+	overCap, malformed, unknown, rejected int
+}
+
+func (n notLogged) String() string {
+	var parts []string
+	add := func(c int, what string) {
+		if c > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", c, what))
+		}
+	}
+	add(n.overCap, fmt.Sprintf("over the %d-per-poll cap", MaxDecisionsPerPoll))
+	add(n.malformed, "with a malformed device or request id")
+	add(n.unknown, "for unknown or already decided requests")
+	add(n.rejected, "that failed verification (no ack sent)")
+	return strings.Join(parts, ", ")
 }
 
 func New(cfg Config, src Source, hub *HubClient, trust *Trust, a *audit.Log, log *slog.Logger) (*Adapter, error) {
@@ -126,6 +185,7 @@ func (ad *Adapter) Tick(ctx context.Context) error {
 	for _, err := range ad.trust.Refresh(ctx, ad.hub.Roster) {
 		ad.log.Warn("trusted users", "err", err) // that user keeps their last verified roster
 	}
+	ad.reportNotLogged() // decisions dropped after the last report, once the hub stops sending them
 	items, err := ad.src.Pending(ctx)
 	if err != nil {
 		return fmt.Errorf("source: %w", err)
@@ -253,21 +313,73 @@ func (ad *Adapter) decisionLoop(ctx context.Context) {
 			}
 			continue
 		}
-		for _, d := range ds {
-			ad.Handle(ctx, d)
-		}
-		ad.save()
+		ad.HandleAll(ctx, ds)
 	}
+}
+
+// HandleAll judges one long-poll answer from the hub, at most MaxDecisionsPerPoll of it. Exported for tests.
+func (ad *Adapter) HandleAll(ctx context.Context, ds []QueuedDecision) {
+	if len(ds) > MaxDecisionsPerPoll {
+		ad.limMu.Lock()
+		ad.notLogged.overCap += len(ds) - MaxDecisionsPerPoll
+		ad.limMu.Unlock()
+		ds = ds[:MaxDecisionsPerPoll]
+	}
+	for _, d := range ds {
+		ad.Handle(ctx, d)
+	}
+	ad.reportNotLogged()
+	ad.save()
+}
+
+// reportNotLogged writes one audit entry summing up the decisions dropped since the last one, at most every
+// reportEvery.
+func (ad *Adapter) reportNotLogged() {
+	now := ad.now()
+	ad.limMu.Lock()
+	n := ad.notLogged
+	if n == (notLogged{}) || (!ad.reported.IsZero() && now.Sub(ad.reported) < reportEvery) {
+		ad.limMu.Unlock()
+		return
+	}
+	ad.notLogged, ad.reported = notLogged{}, now
+	ad.limMu.Unlock()
+	ad.log.Warn("hub sent decisions that were dropped unlogged", "detail", n.String())
+	ad.write(audit.Event{Time: now, Event: "decisions-not-logged", Detail: "from the hub, not logged one by one: " + n.String()})
 }
 
 // Handle judges one decision and, if it holds, acts on it. Exported for tests.
 func (ad *Adapter) Handle(ctx context.Context, q QueuedDecision) {
 	now := ad.now()
+	// Everything here is from the hub. Nothing of it is written anywhere unless it has the form the adapter and the
+	// devices make: the hub chooses these strings.
+	if !protocol.IsRequestID(q.RequestID) || !protocol.IsDeviceID(q.Decision.Kid) {
+		ad.limMu.Lock()
+		ad.notLogged.malformed++
+		ad.limMu.Unlock()
+		return
+	}
 	ad.mu.Lock()
 	o := ad.open[q.RequestID]
 	ad.mu.Unlock()
 	reject := func(why string) {
-		ad.write(audit.Event{Time: now, Event: "decision-rejected", RequestID: q.RequestID, Device: q.DeviceID, Detail: why})
+		ad.limMu.Lock()
+		var ok bool
+		if o == nil {
+			if ok = ad.unknown.take(now); !ok {
+				ad.notLogged.unknown++
+			}
+		} else if ok = ad.rejected.take(now); !ok {
+			ad.notLogged.rejected++
+		}
+		ad.limMu.Unlock()
+		if !ok {
+			return
+		}
+		// The device is the one the envelope claims, not the hub's device_id beside it, and nothing has verified
+		// that claim.
+		ad.write(audit.Event{Time: now, Event: "decision-rejected", RequestID: q.RequestID, Device: q.Decision.Kid,
+			Unverified: true, Detail: why})
 		if o != nil {
 			ad.sendAck(ctx, o, protocol.OutcomeRejected, why, q.Decision)
 		}
