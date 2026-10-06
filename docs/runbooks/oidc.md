@@ -74,7 +74,7 @@ itself, and `/oidc/callback` must reach it.
 
 ```
 interpose-hub \
-  -api :8740 -url https://<hub API name>:8740 \
+  -api 0.0.0.0:8740 -url https://<hub API name> \
   -admin 0.0.0.0:8741 \
   -oidc-issuer https://sso.home.example \
   -oidc-client-id interpose \
