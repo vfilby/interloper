@@ -113,6 +113,7 @@ final class AppModel: ObservableObject {
         adapters = Self.loadPins(defaults)
         user = defaults.string(forKey: "user")
         account = defaults.string(forKey: "account")
+        refreshKeyState()
     }
 
     var isEnrolled: Bool { hubURL != nil && token != nil && keys.hasKeys() }
@@ -180,13 +181,13 @@ final class AppModel: ObservableObject {
             let keys = self.keys
             let user = link.user
             let mode = link.mode
+            if !keys.hasKeys() { try await Task.detached { try keys.generate(pin: pin) }.value }
             // Signing uses the approve key: Face ID / PIN on a device (for a new user twice: card, then r1).
-            let (card, genesis): (Envelope, Envelope?) = try await Task.detached {
-                if !keys.hasKeys() { try keys.generate(pin: pin) }
+            let (card, genesis): (Envelope, Envelope?) = try await withApproveKey(pin: pin) { pin in
                 let dev = Device(keys: keys)
                 let card = try dev.card(name: name, pin: pin)
                 return (card, mode == .new ? try dev.genesis(user: user, card: card, pin: pin) : nil)
-            }.value
+            }
             let resp = try await HubClient(base: link.hub, token: nil).enroll(code: link.code, card: card, genesis: genesis)
             let ours = try device.deviceID()
             guard resp.deviceId == ours else {
@@ -293,7 +294,7 @@ final class AppModel: ObservableObject {
 
     /// Admits a device asking to join: next roster = verified head + its card, signed here (Face ID).
     func approveJoin(_ join: HubJoin, pin: String? = nil) async throws {
-        try await changeRoster { dev, head in
+        try await changeRoster(pin: pin) { dev, head, pin in
             let card = try verifyCard(join.card)
             guard card.deviceId == join.deviceId else { throw ProtocolError.mismatch("join card is for another device") }
             guard head.devices[card.deviceId] == nil else { throw ProtocolError.mismatch("already a member") }
@@ -304,25 +305,25 @@ final class AppModel: ObservableObject {
 
     /// Removes a device: next roster = verified head without it, signed here (Face ID).
     func removeDevice(_ id: String, pin: String? = nil) async throws {
-        try await changeRoster { dev, head in try dev.remove(id, after: head, pin: pin) }
+        try await changeRoster(pin: pin) { dev, head, pin in try dev.remove(id, after: head, pin: pin) }
     }
 
-    private func changeRoster(_ build: @escaping @Sendable (Device, Head) throws -> Envelope) async throws {
+    private func changeRoster(pin: String?, _ build: @escaping @Sendable (Device, Head, String?) throws -> Envelope) async throws {
         guard let client else { throw ProtocolError.untrusted("no hub") }
-        try await client.postRoster(try await nextRoster(build))
+        try await client.postRoster(try await nextRoster(pin: pin, build))
         await refreshRoster()
     }
 
     /// Builds and signs the next roster from this device's own freshly verified copy of the chain, never from the
     /// hub's say-so.
-    private func nextRoster(_ build: @escaping @Sendable (Device, Head) throws -> Envelope) async throws -> Envelope {
+    private func nextRoster(pin: String?, _ build: @escaping @Sendable (Device, Head, String?) throws -> Envelope) async throws -> Envelope {
         guard let client, let user, let account else { throw ProtocolError.untrusted("no pinned account") }
         let r = try await client.roster()
         let h = try verifyChain(r.chain, user: user, account: account)
         try requireBuildsOn(r.chain, known: knownHead)
         guard h.devices[try device.deviceID()] != nil else { throw ProtocolError.untrusted("this device is not a member") }
         let keys = self.keys
-        let env = try await Task.detached { try build(Device(keys: keys), h) }.value
+        let env = try await withApproveKey(pin: pin) { pin in try build(Device(keys: keys), h, pin) }
         _ = try extend(h, env) // check our own work before sending it
         return env
     }
@@ -398,8 +399,7 @@ final class AppModel: ObservableObject {
         }
         let keys = self.keys
         do {
-            // Off the main thread: the approve key's Face ID prompt blocks the signing call.
-            let env = try await Task.detached { try Device(keys: keys).decide(req, approve: approve, pin: pin) }.value
+            let env = try await withApproveKey(pin: pin) { pin in try Device(keys: keys).decide(req, approve: approve, pin: pin) }
             sentHashes[req.id, default: []].append(B64.encode(sha256(try B64.decode(env.payload))))
             try await client.postDecision(DecisionPost(adapter: req.record.adapter, requestId: req.record.id, decision: env))
             outcomes[req.id] = .sent
@@ -415,6 +415,96 @@ final class AppModel: ObservableObject {
         } catch {
             outcomes[req.id] = .failed(error.localizedDescription)
         }
+    }
+
+    // MARK: the approve key
+
+    /// Asks for the app PIN: shown by PINPromptModifier on whatever screen is on top.
+    final class PINPrompt: Identifiable {
+        let message: String?
+        private var answer: CheckedContinuation<String?, Never>?
+
+        init(message: String?, _ answer: CheckedContinuation<String?, Never>) {
+            self.message = message
+            self.answer = answer
+        }
+
+        /// The typed PIN, or nil for cancel. Only the first answer counts.
+        func finish(_ pin: String?) {
+            answer?.resume(returning: pin)
+            answer = nil
+        }
+    }
+
+    @Published var pinPrompt: PINPrompt?
+
+    private func askPIN(_ message: String?) async -> String? {
+        pinPrompt?.finish(nil)
+        return await withCheckedContinuation { pinPrompt = PINPrompt(message: message, $0) }
+    }
+
+    /// Runs something that signs with the approve key, off the main thread (its Face ID prompt blocks). With no `pin`
+    /// it tries Face ID; when Face ID cannot open the key, or a PIN was wrong, it asks for the app PIN and tries again
+    /// until the PIN works, the person cancels or the PIN is locked out. iOS no longer asks for the PIN itself: the
+    /// key's password is a random secret the PIN only unwraps (KeyStore.swift).
+    func withApproveKey<T: Sendable>(pin: String? = nil, _ op: @escaping @Sendable (String?) throws -> T) async throws -> T {
+        var pin = pin
+        while true {
+            let message: String?
+            do {
+                let p = pin
+                let r = try await Task.detached { try op(p) }.value
+                if pin != nil { refreshKeyState() }
+                return r
+            } catch let e as ApproveKeyError {
+                refreshKeyState()
+                switch e {
+                case .keysDeleted:
+                    await keysDeleted()
+                    throw e
+                case .lockedOut, .wrongPIN(_, .some):
+                    throw e
+                case .wrongPIN:
+                    message = e.localizedDescription
+                case .pinNeeded:
+                    message = faceIDState == .changed
+                        ? "Faces or fingerprints on this phone changed since Face ID was set up for approvals, so only the app PIN opens the approve key."
+                        : nil
+                }
+            }
+            guard let typed = await askPIN(message), !typed.isEmpty else { throw ApproveKeyError.pinNeeded }
+            pin = typed
+        }
+    }
+
+    /// Face ID for approvals and the PIN counter, as last read from the key store (for Settings).
+    @Published private(set) var faceIDState: FaceIDState = .notApplicable
+    @Published private(set) var pinFailures: (count: Int, lockedUntil: Date?) = (0, nil)
+
+    func refreshKeyState() {
+        faceIDState = keys.hasKeys() ? keys.faceIDState() : .notApplicable
+        pinFailures = keys.pinFailures
+    }
+
+    /// Lets Face ID open the approve key again, with the app PIN. The person has confirmed that every face or finger
+    /// enrolled on this phone is theirs.
+    func enableFaceID(pin: String) async throws {
+        let keys = self.keys
+        defer { refreshKeyState() }
+        do {
+            try await Task.detached { try keys.enableFaceID(pin: pin) }.value
+        } catch ApproveKeyError.keysDeleted {
+            await keysDeleted()
+            throw ApproveKeyError.keysDeleted
+        }
+    }
+
+    /// Too many wrong PINs deleted the keys: tell the hub (best effort) and start over. The account still lists this
+    /// device until another device removes it.
+    private func keysDeleted() async {
+        if let client { try? await client.leave(LeavePost()) }
+        forgetLocally(deleteKeys: true)
+        lastError = ApproveKeyError.keysDeleted.localizedDescription
     }
 
     // MARK: reset
@@ -443,7 +533,7 @@ final class AppModel: ObservableObject {
             try await tellHubLeaving(LeavePost())
         case .removesThisDevice:
             let me = try device.deviceID()
-            let env = try await nextRoster { dev, head in try dev.remove(me, after: head, pin: pin) }
+            let env = try await nextRoster(pin: pin) { dev, head, pin in try dev.remove(me, after: head, pin: pin) }
             try await tellHubLeaving(LeavePost(roster: env))
         case .deletesAccount:
             try await tellHubLeaving(LeavePost(deleteAccount: true))
@@ -463,6 +553,7 @@ final class AppModel: ObservableObject {
     func forgetLocally(deleteKeys: Bool) {
         if deleteKeys { try? keys.reset() }
         forgetHub()
+        refreshKeyState()
         lastError = nil
     }
 

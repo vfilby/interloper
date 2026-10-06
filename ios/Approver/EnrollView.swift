@@ -217,11 +217,16 @@ struct EnrollView: View {
             Section("This device") {
                 TextField("Name", text: $name)
                 if needsPIN {
-                    SecureField("App PIN (6+ digits, Face ID fallback)", text: $pin)
-                        .keyboardType(.numberPad)
+                    SecureField("App PIN (\(AppPIN.minimumLength)+ characters, Face ID fallback)", text: $pin)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    if !pin.isEmpty, let p = AppPIN.problem(pin) {
+                        Text(p).font(.footnote).foregroundStyle(.orange)
+                    }
                 } else if !model.isInsecure {
                     SecureField("App PIN (only if Face ID is unavailable)", text: $pin)
-                        .keyboardType(.numberPad)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
                 }
             }
             Section {
@@ -237,7 +242,7 @@ struct EnrollView: View {
                         if busy { Spacer(); ProgressView() }
                     }
                 }
-                .disabled(busy || name.isEmpty || (needsPIN && pin.count < 6))
+                .disabled(busy || name.isEmpty || (needsPIN && AppPIN.problem(pin) != nil))
             } footer: {
                 if l.mode == .join {
                     Text("Signs this device's card (Face ID) and asks to join the account. It can approve nothing until a device already on the account approves it there; compare this device's fingerprint on both screens.")

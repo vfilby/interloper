@@ -7,6 +7,9 @@ struct SettingsView: View {
     @State private var confirmLeave = false
     @State private var busy = false
     @State private var failure: Failure?
+    @State private var confirmFaceID = false
+    @State private var faceIDPIN = ""
+    @State private var faceIDError: String?
 
     /// Telling the hub failed: say why, and offer to forget it on this phone only.
     struct Failure: Identifiable {
@@ -39,6 +42,8 @@ struct SettingsView: View {
             } footer: {
                 Text("The device fingerprint (4 groups) identifies this phone, e.g. when another of your devices approves it. Adapters do not use it: they trust the account fingerprint above.")
             }
+
+            if !model.isInsecure { approvingSection }
 
             Section {
                 LabeledContent("Hub") { Text(model.hubURL?.absoluteString ?? "—").font(.footnote.monospaced()) }
@@ -79,6 +84,23 @@ struct SettingsView: View {
             }
         }
         .navigationTitle("Device")
+        .onAppear { model.refreshKeyState() }
+        .alert("Use Face ID for approvals?", isPresented: $confirmFaceID) {
+            SecureField("App PIN", text: $faceIDPIN)
+            Button("Use Face ID") {
+                let pin = faceIDPIN
+                faceIDPIN = ""
+                Task {
+                    do { try await model.enableFaceID(pin: pin); faceIDError = nil } catch { faceIDError = error.localizedDescription }
+                }
+            }
+            Button("Cancel", role: .cancel) { faceIDPIN = "" }
+        } message: {
+            Text((model.faceIDState == .changed
+                  ? "Faces or fingerprints on this phone changed since Face ID was last set up for approvals. "
+                  : "")
+                 + "Continue only if every face and fingerprint enrolled on this phone is yours: any of them will be able to approve. Enter the app PIN to confirm.")
+        }
         .confirmationDialog("Leave this hub?", isPresented: $confirmLeave, titleVisibility: .visible) {
             Button("Leave hub", role: .destructive) { run(deleteKeys: false) { try await model.leaveHub() } }
         } message: {
@@ -106,6 +128,36 @@ struct SettingsView: View {
             Button("Cancel", role: .cancel) {}
         } message: { f in
             Text("\(f.message)\n\nGoing ahead only changes this phone: the hub keeps the device until an admin removes it in the management UI.")
+        }
+    }
+
+    private var approvingSection: some View {
+        Section {
+            LabeledContent("Face ID") {
+                switch model.faceIDState {
+                case .on: Text("On")
+                case .changed: Text("Off: faces or fingerprints changed").foregroundStyle(.orange)
+                case .off, .notApplicable: Text("Off")
+                }
+            }
+            if model.faceIDState == .off || model.faceIDState == .changed {
+                Button("Use Face ID for approvals…") { faceIDPIN = ""; confirmFaceID = true }
+            }
+            if model.pinFailures.count > 0 {
+                Text("\(model.pinFailures.count) wrong app PIN\(model.pinFailures.count == 1 ? "" : "s") in a row"
+                     + (model.pinFailures.lockedUntil.map { $0 > Date() ? "; next try \($0.formatted(date: .abbreviated, time: .shortened))" : "" } ?? "")
+                     + ".")
+                    .font(.footnote).foregroundStyle(.orange)
+            }
+            if model.keys.hasLegacyApproveKey {
+                Text("This device's approve key was made with the app PIN as its password, so only the attempt limit protects a short PIN. Reset the device and connect it again for a key with a random password and a longer PIN.")
+                    .font(.footnote).foregroundStyle(.orange)
+            }
+            if let faceIDError { Text(faceIDError).font(.footnote).foregroundStyle(.red) }
+        } header: {
+            Text("Approving")
+        } footer: {
+            Text("Approvals need Face ID or the app PIN. After 3 wrong PINs each further one locks the PIN for longer (1 min, 4 min, 16 min, …); the \(PINAttemptPolicy().maxFailures)th in a row deletes this device's keys. New faces or fingerprints turn Face ID off until you turn it on again here.")
         }
     }
 

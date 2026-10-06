@@ -79,11 +79,19 @@ and app-password access control are not the real thing. A device uses the Secure
 
 | Key | Access control |
 |---|---|
-| approve | `.privateKeyUsage` + `.biometryCurrentSet` **or** `.applicationPassword` (the app PIN set at enrollment), `WhenPasscodeSetThisDeviceOnly` |
+| approve | `.privateKeyUsage` + `.applicationPassword`, `WhenPasscodeSetThisDeviceOnly`. The password is 32 random bytes: Face ID reads a copy (`.biometryCurrentSet` keychain item), the app PIN unwraps another (PBKDF2-HMAC-SHA256, 600,000 iterations) |
 | deny | `.privateKeyUsage`, `WhenUnlockedThisDeviceOnly` |
 | encryption | `.privateKeyUsage`, `AfterFirstUnlockThisDeviceOnly` |
 
-The Keychain holds each key's `dataRepresentation` (a handle only this Secure Enclave can use) and the hub token.
+The app PIN (8+ characters, letters allowed) is asked for when Face ID fails or is cancelled. Wrong PINs are counted:
+after 3, each locks the PIN for longer (1 min, 4 min, 16 min, …), and the 10th in a row deletes the keys. Adding a
+face or finger turns Face ID off for approvals until **Device → Use Face ID for approvals…** turns it on again with the
+PIN. Devices connected before this change keep their keys (the app PIN is still the key's password, with the counter
+on top); Reset device and connect again to get a random password. Details and limits: [DESIGN.md](../docs/DESIGN.md),
+"iOS app".
+
+The Keychain holds each key's `dataRepresentation` (a handle only this Secure Enclave can use), the PIN-wrapped
+password, the PIN failure count and the hub token.
 Adapter pins are public keys, kept in UserDefaults.
 
 ## End-to-end UI test
@@ -138,6 +146,7 @@ Enroll with another hub. A new code from the same hub re-enrolls the same keys.
 - **App Attest** assertion at enrollment.
 - **Off-network transport.** Only the direct path is implemented: the hub's HTTP API on LAN/VPN.
 - An in-app **QR scanner**. The Camera app opening the `interpose://` link covers enrollment for now.
-- **Untested on hardware:** Secure Enclave key creation with `.applicationPassword` and the PIN path. The simulator
-  only exercises software keys.
+- **Untested on hardware:** Secure Enclave key creation with `.applicationPassword`, the random password with Face ID
+  and the PIN path, the PIN prompt, lockout and wipe on a real key, and turning Face ID back on after a biometric
+  change. The simulator only exercises software keys; `swift test` covers the PIN wrap and the attempt counter.
 - Device-side revocation handling and key rotation; Apple Watch approve.
