@@ -108,11 +108,12 @@ func run(cmd, file, name string, args []string) error {
 			return err
 		}
 		sess = session{Hub: client.Base, Token: client.Token, Adapters: map[string]string{}, Roster: softdevice.Known{User: res.User}}
-		if err := pin(ctx, client, &sess); err != nil {
-			return err
-		}
 		fmt.Printf("enrolled as %s for user %s (%s); device fingerprint %s\n", res.DeviceID, res.User, res.Status, protocol.Fingerprint(mustPub(d)))
 		if res.Status == "active" {
+			// A pending join is served its roster only: it pins adapters at its first list, once admitted.
+			if err := pin(ctx, client, &sess); err != nil {
+				return err
+			}
 			h, err := adopt(ctx, client, &sess)
 			if err != nil {
 				return err

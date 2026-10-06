@@ -11,9 +11,10 @@ What sign-in decides, and what it does not:
     their own phones at the hub.
 - **It does not decide** which phones can approve. That is each user's roster, signed by their own phones
   (`docs/PROTOCOL.md`).
-- **So a compromised OIDC account can start an enrollment, and nothing more.** The new phone still waits for
+- **So a compromised OIDC account can start an enrollment, and little more.** The new phone still waits for
   approval on one of the user's existing phones, and adapters trust users by account fingerprint, not by what the hub
-  or the OIDC provider says.
+  or the OIDC provider says. Until it is admitted, the hub serves that phone the user's roster (device names, public
+  keys) and nothing else: no adapters, requests, acks, other join requests or push registration.
 
 ## 1. Groups
 

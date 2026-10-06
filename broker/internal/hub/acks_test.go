@@ -88,11 +88,15 @@ func TestAcksOnlyForRecipients(t *testing.T) {
 		{"vince B", vince.tokB, []string{"ssh/v1"}},
 		{"kim A", kim.tokA, []string{"web/k1"}},
 		{"kim B", kim.tokB, []string{"web/k1"}},
-		{"kim's unadmitted join", join.Token, []string{}},
 	} {
 		if got := acks(tc.tok); !slices.Equal(got, tc.want) {
 			t.Errorf("%s: acks %v, want %v", tc.who, got, tc.want)
 		}
+	}
+
+	// kim's unadmitted join is refused the feed at the API (TestPendingJoinIsServedOnlyItsRoster), and has nothing in it.
+	if got := st.Acks(c.ID(), time.Unix(0, 0)); len(got) != 0 {
+		t.Errorf("kim's unadmitted join: acks %v", got)
 	}
 
 	// A device dropped from the hub is dropped from the recipients too.

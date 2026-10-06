@@ -149,8 +149,12 @@ final class AppModel: ObservableObject {
         if granted { UIApplication.shared.registerForRemoteNotifications() }
     }
 
+    /// The last APNs token, sent again when a pending join is admitted (the hub refuses it before).
+    private var apnsToken: String?
+
     func registerPush(_ token: String) async {
-        guard let client else { return }
+        apnsToken = token
+        guard let client, membership != .pending else { return }
         #if DEBUG
         let environment = "development"
         #else
@@ -159,6 +163,8 @@ final class AppModel: ObservableObject {
         do {
             try await client.registerPush(token: token, environment: environment)
             pushError = nil
+        } catch HubClient.HubError.http(403, _) {
+            pushError = nil // still waiting for admission: sent again then
         } catch {
             pushError = "Push notifications: \(error.localizedDescription)"
         }
@@ -199,8 +205,8 @@ final class AppModel: ObservableObject {
             if let genesis {
                 setAccount(accountFingerprint(genesisPayload: try B64.decode(genesis.payload)))
             }
-            await refreshAdapters()
             await refreshRoster()
+            await refreshAdapters() // only once a member: the hub serves a pending join its roster and nothing else
             pendingLink = nil
             sheet = .summary(EnrollmentSummary(deviceFingerprint: Fingerprint.of(try keys.publicKeys().approve),
                                                adapters: adapters, user: user, account: account))
@@ -217,7 +223,7 @@ final class AppModel: ObservableObject {
     /// Pins adapters the hub lists for the first time (trust on first use). A different key for a pinned id is a
     /// conflict: it is shown and never used.
     func refreshAdapters() async {
-        guard let client else { return }
+        guard let client, membership == .member else { return }
         do {
             var pinned = adapters
             var found: [AdapterConflict] = []
@@ -325,7 +331,14 @@ final class AppModel: ObservableObject {
 
     func refresh() async {
         guard isEnrolled, let client else { return }
+        let wasMember = membership == .member
         await refreshRoster()
+        // The hub serves a join that is not admitted yet its roster only.
+        if membership == .pending { return }
+        if !wasMember && membership == .member {
+            await refreshAdapters()
+            if let apnsToken { await registerPush(apnsToken) }
+        }
         await refreshJoins()
         do {
             var opened: [OpenedRequest] = []

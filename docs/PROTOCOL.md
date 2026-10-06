@@ -184,7 +184,9 @@ The **account fingerprint** pins a user. It is the first 16 bytes of SHA-256 ove
 pins `(user, account fingerprint)` and accepts a chain only if the hash of its r1 matches.
 
 Adding a device:
-1. The new device enrolls with a **join** code for the user. It is then pending: no adapter knows it.
+1. The new device enrolls with a **join** code for the user. It is then pending: no adapter knows it, and the hub
+   serves it only its user's roster (to learn when it is admitted) and a plain leave (to withdraw); every other device
+   route answers 403.
 2. An existing device of the user sees the join request: name and device fingerprint, which the person compares with
    the new phone.
 3. On approval (Face ID), that device builds the next roster from **its own verified copy** of the chain, adds the
@@ -210,7 +212,9 @@ trust until `interpose-adapter trust add-user` is run again; the old account's t
 ## Hub HTTP API (transport only)
 
 Every route requires `Authorization: Bearer <token>`. Adapter tokens and device tokens are different kinds and
-reach different routes. Tokens are transport credentials: they stop LAN noise and abuse, not forgery.
+reach different routes. Tokens are transport credentials: they stop LAN noise and abuse, not forgery. A device whose
+join is not approved yet (enroll `status` `pending`) gets 403 on every device route except `GET /v1/device/roster` and
+`POST /v1/device/leave` without `roster` or `delete_account`.
 
 | Route | Caller | Purpose |
 |---|---|---|
@@ -219,9 +223,9 @@ reach different routes. Tokens are transport credentials: they stop LAN noise an
 | `POST /v1/adapter/acks` | adapter | `{request_id, ack: envelope}`: resolves the request at the hub |
 | `GET /v1/adapter/rosters?user=<id>` | adapter | `{user, chain: [roster envelopes]}` |
 | `POST /v1/enroll` | new device (one-time code instead of a token) | `{code, card, genesis?}` → `{device_id, token, user, status}`. `genesis` (r1, containing this card) is required for a `new` code and refused for a `join` code. `status` is `active` (in the head roster) or `pending` (join not approved yet). |
-| `GET /v1/device/roster` | device | `{user, chain}` for the device's user |
+| `GET /v1/device/roster` | device (also pending) | `{user, chain}` for the device's user |
 | `POST /v1/device/roster` | device (current member) | `{roster: envelope}`: the next roster. The hub checks it extends the chain, appends it, and stops serving devices it removes |
-| `POST /v1/device/leave` | device | `{roster?, delete_account?}`: the device goes away and the hub deletes its record. `roster` is the next roster, without this device, signed by it: it takes itself off the account first. `delete_account` is only for the account's last device (its keys are going, so nothing could sign for the account again): the hub deletes the account. Neither: the roster is unchanged and the device may come back with a join code. |
+| `POST /v1/device/leave` | device (pending: plain leave only) | `{roster?, delete_account?}`: the device goes away and the hub deletes its record. `roster` is the next roster, without this device, signed by it: it takes itself off the account first. `delete_account` is only for the account's last device (its keys are going, so nothing could sign for the account again): the hub deletes the account. Neither: the roster is unchanged and the device may come back with a join code. |
 | `POST /v1/device/push` | device | `{token, environment}`: the device's APNs token (hex) and `production` or `development`; an empty token stops pushes. The hub pushes a fixed text, never request content: "Approval request" to the devices a request is sealed for, "New device" to an account's devices when another asks to join. |
 | `GET /v1/device/joins` | device | `[{device_id, name, card, requested_at}]`: pending join requests for the device's user |
 | `GET /v1/device/adapters` | device | `[{id, key, fingerprint}]`: adapter keys to pin (trust on first use, fingerprints shown) |

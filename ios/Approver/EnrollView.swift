@@ -294,7 +294,9 @@ struct EnrollmentSummaryView: View {
                 } header: {
                     Text("Adapters pinned")
                 } footer: {
-                    Text("Pinned on first sight. Compare with the fingerprint each adapter prints at start.")
+                    Text(summary.account == nil
+                         ? "Pinned on first sight, once this device is admitted. Compare with the fingerprint each adapter prints at start."
+                         : "Pinned on first sight. Compare with the fingerprint each adapter prints at start.")
                 }
             }
             .navigationTitle("Enrolled")

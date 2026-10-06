@@ -354,8 +354,11 @@ func TestJoinApprovedOnExistingPhone(t *testing.T) {
 		t.Fatalf("join status %q", res.Status)
 	}
 	_, _ = w.openOne(w.phone, w.phoneHub, "before admission")
-	if n := len(w.pending(hub2)); n != 0 {
-		t.Fatalf("a device waiting for approval got %d boxes", n)
+	if rs, err := hub2.Requests(w.ctx); err == nil || !strings.Contains(err.Error(), "403") {
+		t.Fatalf("a device waiting for approval was served requests: %d boxes, %v", len(rs), err)
+	}
+	if _, err := hub2.Roster(w.ctx); err != nil {
+		t.Fatalf("a device waiting for approval cannot read its roster: %v", err)
 	}
 
 	// A device cannot admit itself: the hub refuses, and so would every adapter.
