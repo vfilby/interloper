@@ -1,6 +1,6 @@
 # TestFlight beta for the Interpose app
 
-The app is **Interpose** (`com.eff3.interloper`), on team `ABCDE12345`, the same team as MigraLog. Builds are made
+The app is **Interpose** (`com.eff3.interloper`), on the same Apple developer team as MigraLog (the team id is not in the repository: it lives in the `APPLE_TEAM_ID` secret and, for local device builds, in your shell). Builds are made
 and uploaded by GitHub Actions: `.github/workflows/ios-testflight.yml`, modelled on MigraLog's release pipeline.
 - **Name:** the app was first called Interloper, and the identifiers keep that name: the bundle id, the App ID and
   profile below, the `INTERLOPER_PROVISIONING_PROFILE` secret and the keychain items. Changing the bundle id would make
@@ -38,7 +38,7 @@ using its per-repo deploy key.
 ### 4. Repository secrets (Settings → Secrets and variables → Actions)
 GitHub cannot read secrets back, so they cannot be copied from MigraLog's repo. Instead:
 - **Certificate:** Keychain Access → login → My Certificates → right-click
-  `Apple Distribution: <name> (ABCDE12345)` → Export as `.p12`, with a new password.
+  `Apple Distribution: <name> (<team id>)` → Export as `.p12`, with a new password.
 - **API key:** App Store Connect → Users and Access → Integrations → App Store Connect API → Team Keys → generate
   an **App Manager** key (e.g. `Interloper CI`). The `.p8` downloads **once**; the Issuer ID is at the top of the page.
 - Keep the `.p12`, its password, the `.p8`, Key ID and Issuer ID together in 1Password.
@@ -50,11 +50,11 @@ GitHub cannot read secrets back, so they cannot be copied from MigraLog's repo. 
 | `INTERLOPER_PROVISIONING_PROFILE` | `base64 -i "Interloper_App_Store.mobileprovision"` |
 | `ASC_KEY_ID`, `ASC_ISSUER_ID` | App Store Connect API key (role App Manager or higher; the MigraLog key works team-wide) |
 | `ASC_API_KEY_P8` | the key's `.p8` text |
-| `APPLE_TEAM_ID` | `ABCDE12345` |
+| `APPLE_TEAM_ID` | the 10-character team id (Apple Developer → Membership details). The workflow passes it to `xcodebuild` and writes it into `ExportOptions.plist` at build time; `project.yml` reads it from the environment |
 
 With the GitHub CLI (quote filenames: exported ones contain spaces and parentheses):
 ```
-gh secret set APPLE_TEAM_ID -R vfilby/interpose -b ABCDE12345
+gh secret set APPLE_TEAM_ID -R vfilby/interpose -b <team id>
 base64 -i "Interloper_App_Store.mobileprovision" | gh secret set INTERLOPER_PROVISIONING_PROFILE -R vfilby/interpose
 base64 -i "<exported>.p12" | gh secret set SWIFT_CERTIFICATE_P12 -R vfilby/interpose
 pbpaste | gh secret set SWIFT_CERTIFICATE_PASSWORD -R vfilby/interpose   # copy the password first

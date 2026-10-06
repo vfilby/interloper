@@ -24,8 +24,9 @@ xcodebuild -project Approver.xcodeproj -scheme Approver \
 Sign to run locally (`CODE_SIGN_IDENTITY=-`) rather than `CODE_SIGNING_ALLOWED=NO`: an unsigned app builds, but at
 run time every Keychain call fails with -34018 (missing entitlement), so it cannot enroll.
 
-Or open `Approver.xcodeproj` in Xcode and run. A device build needs a signing team (set it in Xcode; it is not in
-`project.yml`).
+Or open `Approver.xcodeproj` in Xcode and run. A device build needs a signing team: `project.yml` takes it from
+`APPLE_TEAM_ID` when `xcodegen` runs (`set -x APPLE_TEAM_ID <team id>` in fish, `export` elsewhere), so it is never
+in the repository. Simulator builds do not need it.
 
 ## Connecting a device
 

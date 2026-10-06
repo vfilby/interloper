@@ -91,6 +91,7 @@ jobs:
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
+          [ -n "$APPLE_TEAM_ID" ] || { echo "the APPLE_TEAM_ID secret is not set"; exit 1; }
           xcodegen generate
           xcodebuild archive -project Approver.xcodeproj -scheme Approver -configuration Release \
             -destination 'generic/platform=iOS' -archivePath build/Interpose.xcarchive \
@@ -100,9 +101,11 @@ jobs:
 
       - name: Upload to TestFlight
         env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
         run: |
+          plutil -replace teamID -string "$APPLE_TEAM_ID" ExportOptions.plist
           xcodebuild -exportArchive -archivePath build/Interpose.xcarchive -exportOptionsPlist ExportOptions.plist \
             -exportPath build/export \
             -authenticationKeyPath "$HOME/.private_keys/AuthKey_${ASC_KEY_ID}.p8" \
