@@ -3,3 +3,16 @@ bin/
 hub-data/
 adapter-data/
 adapters/warpgate/deploy/interpose-adapter
+
+# Secrets: never committable, wherever a copy lands while staging an install.
+.env
+.env.*
+secrets/
+*.p8
+*.p12
+*.mobileprovision
+session.key
+signing.key
+hub-token
+warpgate-token
+oidc-secret
