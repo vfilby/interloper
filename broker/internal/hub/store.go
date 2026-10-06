@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -62,6 +63,9 @@ type Request struct {
 	CreatedAt int64                      `json:"created_at"`
 	ExpiresAt int64                      `json:"expires_at"`
 	Boxes     map[string]protocol.Sealed `json:"boxes"`
+	// The devices the request was sealed for. Boxes is emptied once the request is decided; this is kept, so only
+	// those devices are told the outcome.
+	Recipients []string `json:"recipients,omitempty"`
 	// Set once the adapter acks: the request is no longer shown to devices.
 	Ack        *protocol.Envelope `json:"ack,omitempty"`
 	ResolvedAt time.Time          `json:"resolved_at,omitzero"`
@@ -622,6 +626,13 @@ func (st *Store) dropDevices(ids []string) {
 		for id := range drop {
 			delete(r.Boxes, id)
 		}
+		recipients := r.Recipients[:0]
+		for _, id := range r.Recipients {
+			if !drop[id] {
+				recipients = append(recipients, id)
+			}
+		}
+		r.Recipients = recipients
 	}
 	decisions := st.s.Decisions[:0]
 	for _, q := range st.s.Decisions {
@@ -686,6 +697,11 @@ func (st *Store) Publish(adapter string, r Request, now time.Time) error {
 		return ErrTooMany
 	}
 	r.Adapter, r.Ack, r.ResolvedAt, r.Decisions = adapter, nil, time.Time{}, 0
+	r.Recipients = make([]string, 0, len(r.Boxes))
+	for id := range r.Boxes {
+		r.Recipients = append(r.Recipients, id)
+	}
+	sort.Strings(r.Recipients)
 	st.s.Requests[k] = &r
 	return st.commit()
 }
@@ -784,12 +800,26 @@ type AckEntry struct {
 	At        time.Time         `json:"-"`
 }
 
-// Acks lists acks and notes from since on. Acks are signed, not secret; every device may read them.
-func (st *Store) Acks(since time.Time) []AckEntry {
+// addressedTo reports whether a request was sealed for the device. Requests stored before Recipients existed fall
+// back to their boxes, which are there until the request is decided.
+func (r *Request) addressedTo(deviceID string) bool {
+	if slices.Contains(r.Recipients, deviceID) {
+		return true
+	}
+	_, ok := r.Boxes[deviceID]
+	return ok
+}
+
+// Acks lists acks and notes from since on for the requests sealed for the device. They name the service, the
+// outcome and who decided, so a device sees only those of requests it was asked about.
+func (st *Store) Acks(deviceID string, since time.Time) []AckEntry {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	var out []AckEntry
 	for _, r := range st.s.Requests {
+		if !r.addressedTo(deviceID) {
+			continue
+		}
 		for _, n := range r.Notes {
 			if !n.At.Before(since) {
 				out = append(out, AckEntry{Adapter: r.Adapter, RequestID: r.ID, Ack: n.Ack, At: n.At})

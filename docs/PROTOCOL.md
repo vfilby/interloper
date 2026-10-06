@@ -227,7 +227,7 @@ reach different routes. Tokens are transport credentials: they stop LAN noise an
 | `GET /v1/device/adapters` | device | `[{id, key, fingerprint}]`: adapter keys to pin (trust on first use, fingerprints shown) |
 | `GET /v1/device/requests` | device | `[{id, adapter, kind, created_at, expires_at, box}]`: pending requests that have a box for this device |
 | `POST /v1/device/decisions` | device | `{adapter, request_id, decision: envelope}` |
-| `GET /v1/device/acks?since=<unix>` | device | `[{adapter, request_id, ack: envelope}]` |
+| `GET /v1/device/acks?since=<unix>` | device | `[{adapter, request_id, ack: envelope}]`: acks and notes of the requests that were sealed for this device |
 
 The enrollment link the management UI shows as a QR code (and as text):
 
