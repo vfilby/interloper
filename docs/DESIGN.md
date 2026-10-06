@@ -31,6 +31,7 @@ Status (2026-10-04):
 | D13 | Off-network transport is **open again** (it replaces D4's commitment until decided); see "Off-network transport" below. LAN is used for testing. | 2026-10-03 |
 | D14 | **Multi-user, option B.** Each user has a roster: a hash-chained list of their devices. Every version is signed by a device on the previous one, and the first by the first phone. Adding a phone means approving it (Face ID) on one already on the roster. Adapters pin **users** (user id + account fingerprint = hash of the first roster), not devices. They verify chains themselves and refuse rollbacks and forks. The hub hands out codes and stores chains, but cannot add a device. Supersedes D10. Deferred: a recovery key member, and per-user logins to the management UI. | 2026-10-03 |
 | D15 | **OIDC sign-in** (an OIDC provider such as Authelia) for the management UI and for phone sign-in. Members of `interpose_admins` are hub admins; everyone else gets self-service for their own account. The provider's two-factor `interpose` policy allows `interpose_users` and `interpose_admins`. Sign-in only gates who may start an enrollment; rosters still decide who can approve. Runbook: [runbooks/oidc.md](runbooks/oidc.md). | 2026-10-03 |
+| D16 | **Roster threshold stays one, for now (accepted risk).** Any one current device signs any next roster, removals included, so a phone stolen with its Face ID or app PIN owns the account until the hub admin deletes it. No recovery key, multi-signature removals or hub-gated roster updates yet; the options and when to revisit are in "Roster threshold" below. | 2026-10-06 |
 
 ## Clearing house (2026-10-03)
 
@@ -91,6 +92,42 @@ Not verified yet:
 - Secure Enclave keys on hardware (the simulator uses software keys);
 - APNs;
 - the Warpgate source against a real Warpgate (it is tested only through the shared client's request shapes).
+
+### Roster threshold (D16)
+
+From the 2026-10-04 security audit (issue #25). Any one current device may sign the next roster, which can remove
+every other device and add the attacker's (`internal/protocol/roster.go`). Adapters accept any device on the roster of
+a user they trust. So whoever holds one phone and can unlock its approve key (Face ID, or the app PIN) owns the account.
+The only way back is for the hub admin to delete the account. It is then enrolled again with a new account
+fingerprint and pinned again at each adapter.
+
+**Decision: accept this for now.** What already limits it:
+- The approve key is in the Secure Enclave and needs Face ID or the app PIN. The PIN has an attempt limit, and the keys
+  are deleted after 10 wrong PINs (see "Threats and mitigations").
+- Adapters trust only the users their operator pinned (`trust add-user`). An adapter's trust list is already the
+  per-adapter allowlist of who may approve there. A taken-over account reaches only the adapters that pinned it.
+- Every roster posted is written to the hub's audit log (device, seq, member count). A phone that was removed says so
+  in the app.
+- Phones and the hub are on LAN/VPN only (D13), so the attacker also needs to reach the hub.
+
+Options, in the order they would be taken:
+1. **Hub sign-in for removals** (cheapest; suggested by the owner). Before it stores a roster that drops a member, the
+   hub would require a recent OIDC sign-in (D15, two-factor) by that user. This needs no protocol change and no adapter
+   change. It is enforced by the hub, though, so it does not hold against a compromised hub, which D9 otherwise
+   tolerates. It raises the cost for someone holding only a phone, which is the case the audit describes.
+2. **A second device's signature for removals** when the account has more than one device. This is a protocol change:
+   rosters would carry more than one signature, and adapters check it. Its catch is lockout. With two phones and one
+   lost, the only possible second signer is the lost phone. So it needs a floor (for example, only with three or more
+   devices) or a recovery key as the second signer.
+3. **The reserved `recovery` member kind** (PROTOCOL.md): an offline key, kept for example in a password manager, that
+   may sign roster updates but never decisions. On its own it is for recovery, not defence. It lets a user who lost
+   every phone sign a roster with a new phone, with no device involved, so no re-pinning is needed. It defends against
+   a stolen phone only when paired with option 2: a removal needs a device and the recovery key. Requiring the key and
+   a device for every update would defeat recovery when all phones are lost. Its cost: the account is only as safe as
+   the place the key is kept, and users must keep it.
+
+Revisit when the hub's device API becomes reachable off the LAN (D13, option A), or when an account's phones are not
+all held by one person.
 
 ### Next adapters
 
@@ -339,6 +376,7 @@ HTTP target; that was not built.
 | Over-long ticket | Duration caps enforced by auto-deny (approve can't shorten) |
 | Warpgate adapter compromised | Same host and trust as Warpgate; its Warpgate token can only approve/deny tickets |
 | Lost phone | Revoke it from the roster on another phone, or at the hub; Warpgate web UI remains the fallback |
+| Stolen phone that can be unlocked (key plus PIN) | Accepted (D16): it can sign a roster that removes the other phones. Only adapters that pinned that user are exposed; roster changes are audited at the hub; the hub admin deletes the account and it is pinned again |
 
 ## Build phases
 

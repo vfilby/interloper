@@ -46,6 +46,9 @@ What enforces that:
 - The app pins adapter keys on first use; compare the fingerprint the adapter prints with the one on the phone.
 - Verified so far in tests and the simulator. Not yet verified: Secure Enclave keys on hardware, the Warpgate source
   against a live Warpgate (it is tested through the client's request shapes).
+- One device is enough to change a roster (D16 in [docs/DESIGN.md](docs/DESIGN.md)): a phone stolen together with its
+  Face ID or app PIN can remove the user's other phones and add its own. Recovery is the hub admin deleting the
+  account, then enrolling it again and re-pinning it at each adapter.
 - No account recovery key yet: an account whose every phone is lost must be enrolled again and re-trusted at each
   adapter.
 - `interpose-device` (the software phone) keeps its keys in a file. It exists for tests; never trust it on a real
