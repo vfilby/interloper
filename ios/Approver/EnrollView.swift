@@ -280,7 +280,8 @@ struct EnrollmentSummaryView: View {
                     if let a = summary.account {
                         Text(a).font(.footnote.monospaced().weight(.semibold))
                     } else {
-                        Text("Waiting for approval on another of \(summary.user)'s devices.").foregroundStyle(.orange)
+                        Text("Not confirmed. Once another of \(summary.user)'s devices approves this one, you compare the account fingerprint with it.")
+                            .foregroundStyle(.orange)
                     }
                 } header: {
                     Text("Account fingerprint")
@@ -290,18 +291,19 @@ struct EnrollmentSummaryView: View {
                     }
                 }
                 Section {
-                    if summary.adapters.isEmpty {
+                    if summary.adapters.isEmpty && summary.offered.isEmpty {
                         Text("None yet").foregroundStyle(.secondary)
                     }
                     ForEach(summary.adapters) { a in
                         LabeledContent(a.id) { Text(a.fingerprint).font(.footnote.monospaced()) }
                     }
+                    ForEach(summary.offered) { a in
+                        LabeledContent(a.id + " (not confirmed)") { Text(a.fingerprint).font(.footnote.monospaced()) }
+                    }
                 } header: {
-                    Text("Adapters pinned")
+                    Text("Adapters")
                 } footer: {
-                    Text(summary.account == nil
-                         ? "Pinned on first sight, once this device is admitted. Compare with the fingerprint each adapter prints at start."
-                         : "Pinned on first sight. Compare with the fingerprint each adapter prints at start.")
+                    Text("An adapter is pinned once you compare its fingerprint with the one it prints (`interpose-adapter key`) and confirm it in the inbox. Its requests show only after that.")
                 }
             }
             .navigationTitle("Enrolled")

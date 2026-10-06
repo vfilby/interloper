@@ -22,7 +22,7 @@ DEST=${DEST:-"platform=iOS Simulator,name=iPhone 17 Pro,OS=26.4"}
 
 "$B/interpose-hub" -state hub-data -api 127.0.0.1:18740 -admin 127.0.0.1:18741 -url http://127.0.0.1:18740 > hub.log 2>&1 &
 HUB=$!
-trap 'kill $HUB ${AD:-} ${XT:-} 2>/dev/null || true' EXIT
+trap 'kill $HUB ${AD:-} ${XT:-} ${ANN:-} 2>/dev/null || true' EXIT
 sleep 1
 curl -sf localhost:18740/healthz >/dev/null || { echo "test hub did not start:"; cat hub.log; exit 1; }
 "$B/interpose-adapter-demo" key -dir ad > key.txt
@@ -39,11 +39,22 @@ newlink() { curl -sfL localhost:18741/enroll -H 'Sec-Fetch-Site: same-origin' --
   | grep -o 'interpose://enroll[^<"'"'"']*' | head -1 | sed 's/&amp;/\&/g'; }
 # The simulator becomes vince's first phone through phone sign-in (local mode: /app/enroll?user=vince); the test asks
 # the management UI for a join code itself later.
+# User ann's first device is the Go software device; it admits every join for ann, so the UI test can join the app to
+# an account and check that the app pins its fingerprint only once confirmed.
+"$B/interpose-device" init -f ann.json -name "ann software phone" >/dev/null
+ANN_ACCOUNT=$("$B/interpose-device" enroll -f ann.json "$(newlink ann new)" | awk '/account fingerprint/ {print $3}')
+[ -n "$ANN_ACCOUNT" ] || { echo "user ann not created"; exit 1; }
+( while sleep 1; do
+    for id in $("$B/interpose-device" joins -f ann.json | awk '$1 != "no" && $2 != "REFUSED:" {print $1}'); do
+      "$B/interpose-device" admit -f ann.json "$id"
+    done
+  done ) > ann.log 2>&1 &
+ANN=$!
 xcrun simctl uninstall booted com.eff3.interloper 2>/dev/null || true
 xcrun simctl keychain booted reset  # the simulator keychain outlives an uninstall: start unenrolled
 
 echo "== starting UI test"
-( cd "$IOS" && TEST_RUNNER_INTERPOSE_ADMIN_URL="http://127.0.0.1:18741" xcodebuild -project Approver.xcodeproj -scheme Approver \
+( cd "$IOS" && TEST_RUNNER_INTERPOSE_ADMIN_URL="http://127.0.0.1:18741" TEST_RUNNER_INTERPOSE_ANN_ACCOUNT="$ANN_ACCOUNT" xcodebuild -project Approver.xcodeproj -scheme Approver \
     -destination "$DEST" -derivedDataPath build \
     -resultBundlePath "$S/ui.xcresult" test-without-building CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual > "$S/xcodebuild.log" 2>&1 ) &
 XT=$!

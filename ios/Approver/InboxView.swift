@@ -14,6 +14,8 @@ struct InboxView: View {
 
             MembershipBanner()
 
+            OfferedAdaptersSection()
+
             if !model.joins.isEmpty {
                 Section {
                     ForEach(model.joins) { j in

@@ -73,7 +73,7 @@ struct SettingsView: View {
             } header: {
                 Text("Pinned adapters")
             } footer: {
-                Text("Requests are shown only when signed by a pinned adapter key. A changed key is never accepted: reset and re-enroll to change pins.")
+                Text("Requests are shown only when signed by a pinned adapter key. A new adapter is pinned once you confirm its fingerprint in the inbox. A changed key is never accepted: reset and re-enroll to change pins.")
             }
 
             Section {
