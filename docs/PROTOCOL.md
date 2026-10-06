@@ -194,6 +194,10 @@ Adding a device:
 
 Removing a device is a next roster without it, signed on any current device.
 
+The hub keeps chains bounded: it takes a roster (genesis included) only if it has at most 20 members and at most
+48 KB of payload and signature, and it keeps at most 200 rosters per user. A user whose chain is full takes no more
+rosters: an admin deletes the account and it is enrolled again, with a new account fingerprint (below).
+
 Adapters re-fetch chains and verify them back to the pin. Compared with the head they last verified, a chain is
 refused if any of these hold:
 - its head has a lower `seq`;

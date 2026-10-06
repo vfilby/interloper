@@ -30,6 +30,13 @@ const (
 	KeepResolved           = 24 * time.Hour
 	EnrollCodeTTL          = 10 * time.Minute
 	MaxDeviceName          = 100 // bytes; the name lands in state.json, the audit log and every page that lists devices
+	// Rosters: a person's phones and tablets, a change each time one is added or removed. A roster's members are
+	// verified once, when it is appended; the chain's head is then kept in memory, not re-verified per lookup. 20
+	// members with the longest device names take about 22 KB. A full chain takes no more rosters: the account must be
+	// deleted and enrolled again (an admin's break glass, as for an account with no phone left).
+	MaxRosterMembers = 20
+	MaxRosterBytes   = 48 << 10 // the envelope's payload and signature, as posted
+	MaxRosters       = 200      // per user, genesis included
 )
 
 var (
@@ -113,11 +120,12 @@ type Store struct {
 	mu      sync.Mutex
 	path    string
 	s       state
-	changed chan struct{} // closed and replaced on every change; long-polls wait on it
+	changed chan struct{}            // closed and replaced on every change; long-polls wait on it
+	heads   map[string]protocol.Head // user -> verified head of its chain; read-only, replaced as the chain grows
 }
 
 func Open(path string) (*Store, error) {
-	st := &Store{path: path, changed: make(chan struct{}),
+	st := &Store{path: path, changed: make(chan struct{}), heads: map[string]protocol.Head{},
 		s: state{Adapters: map[string]*Adapter{}, Devices: map[string]*Device{}, Requests: map[string]*Request{}, Users: map[string]*User{}}}
 	b, err := os.ReadFile(path)
 	switch {
@@ -272,8 +280,54 @@ type UserView struct {
 	Pending []Device // devices that enrolled with a join code and are not in the head yet
 }
 
+// head returns a user's verified head: the whole chain is verified once, on first use after Open, and the result kept;
+// appends replace it with the head they verified. Called with mu held.
 func (st *Store) head(u *User) (protocol.Head, error) {
-	return protocol.VerifyChain(u.Chain, u.ID, "")
+	if h, ok := st.heads[u.ID]; ok {
+		return h, nil
+	}
+	h, err := protocol.VerifyChain(u.Chain, u.ID, "")
+	if err != nil {
+		return protocol.Head{}, err
+	}
+	st.heads[u.ID] = h
+	return h, nil
+}
+
+// checkRoster refuses a roster over the size or member caps, before any of its signatures are checked.
+func checkRoster(e protocol.Envelope) error {
+	if len(e.Payload)+len(e.Sig) > MaxRosterBytes {
+		return fmt.Errorf("roster larger than %d bytes", MaxRosterBytes)
+	}
+	p, err := protocol.UnB64(e.Payload)
+	if err != nil {
+		return fmt.Errorf("roster: %w", err)
+	}
+	var r struct {
+		Members []json.RawMessage `json:"members"`
+	}
+	if err := json.Unmarshal(p, &r); err != nil {
+		return fmt.Errorf("roster: %w", err)
+	}
+	if len(r.Members) > MaxRosterMembers {
+		return fmt.Errorf("roster has %d members; at most %d", len(r.Members), MaxRosterMembers)
+	}
+	return nil
+}
+
+// extend checks that e may be appended to u's chain and returns the old and new heads. Called with mu held.
+func (st *Store) extend(u *User, e protocol.Envelope) (old, h protocol.Head, err error) {
+	if len(u.Chain) >= MaxRosters {
+		return old, h, fmt.Errorf("user %s has %d rosters, the most the hub keeps: delete the account and enroll again", u.ID, len(u.Chain))
+	}
+	if err := checkRoster(e); err != nil {
+		return old, h, err
+	}
+	if old, err = st.head(u); err != nil {
+		return old, h, err
+	}
+	h, err = protocol.Extend(old, e)
+	return old, h, err
 }
 
 // NewEnrollCode returns a one-time enrollment code for a user and mode, and an id for following it (EnrollStatus).
@@ -375,6 +429,9 @@ func (st *Store) Enroll(code string, card protocol.Envelope, genesis *protocol.E
 		if _, ok := st.s.Users[ec.User]; ok {
 			return Enrolled{}, fmt.Errorf("user %s exists", ec.User)
 		}
+		if err := checkRoster(*genesis); err != nil {
+			return Enrolled{}, err
+		}
 		h, err := protocol.VerifyChain([]protocol.Envelope{*genesis}, ec.User, "")
 		if err != nil {
 			return Enrolled{}, err
@@ -383,6 +440,7 @@ func (st *Store) Enroll(code string, card protocol.Envelope, genesis *protocol.E
 			return Enrolled{}, errors.New("the genesis roster must contain and be signed by the enrolling device")
 		}
 		st.s.Users[ec.User] = &User{ID: ec.User, Chain: []protocol.Envelope{*genesis}, CreatedAt: now}
+		st.heads[ec.User] = h
 		out.Active = true
 	case ModeJoin:
 		if genesis != nil {
@@ -427,15 +485,12 @@ func (st *Store) AppendRoster(user string, r protocol.Envelope) (protocol.Head, 
 	if !ok {
 		return protocol.Head{}, ErrUnknown
 	}
-	old, err := st.head(u)
-	if err != nil {
-		return protocol.Head{}, err
-	}
-	h, err := protocol.Extend(old, r)
+	old, h, err := st.extend(u, r)
 	if err != nil {
 		return protocol.Head{}, err
 	}
 	u.Chain = append(u.Chain, r)
+	st.heads[u.ID] = h
 	for id := range old.Devices {
 		if _, still := h.Devices[id]; !still {
 			if d, ok := st.s.Devices[id]; ok {
@@ -527,6 +582,7 @@ func (st *Store) DeleteUser(id string) ([]string, error) {
 // deleteUser drops a user, its devices and its codes. Callers hold the lock and commit.
 func (st *Store) deleteUser(id string) []string {
 	delete(st.s.Users, id)
+	delete(st.heads, id)
 	var gone []string
 	for did, d := range st.s.Devices {
 		if d.User == id {
@@ -568,11 +624,7 @@ func (st *Store) Leave(deviceID string, roster *protocol.Envelope, deleteAccount
 	case (roster != nil || deleteAccount) && u == nil:
 		return false, errors.New("leave: the device has no account")
 	case roster != nil:
-		old, err := st.head(u)
-		if err != nil {
-			return false, err
-		}
-		h, err := protocol.Extend(old, *roster)
+		old, h, err := st.extend(u, *roster)
 		if err != nil {
 			return false, err
 		}
@@ -580,6 +632,7 @@ func (st *Store) Leave(deviceID string, roster *protocol.Envelope, deleteAccount
 			return false, errors.New("leave: the roster still has this device")
 		}
 		u.Chain = append(u.Chain, *roster)
+		st.heads[u.ID] = h
 		for id := range old.Devices {
 			if _, still := h.Devices[id]; !still && id != deviceID {
 				if o, ok := st.s.Devices[id]; ok {
@@ -919,6 +972,7 @@ func (st *Store) ForceChain(user string, chain []protocol.Envelope) {
 	defer st.mu.Unlock()
 	if u, ok := st.s.Users[user]; ok {
 		u.Chain = chain
+		delete(st.heads, user)
 		_ = st.commit()
 	}
 }
