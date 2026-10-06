@@ -127,12 +127,9 @@ func gone(err error) error {
 // item describes a ticket request from Warpgate's own data. Everything but Reason is authoritative.
 func (s *Source) item(r wgapi.TicketRequest) (adapter.Item, policy.Verdict) {
 	s.mu.Lock()
-	req := policy.Request{Requester: s.users[r.UserID], Target: s.targets[r.TargetID], Created: r.Created}
+	req := policy.Request{Requester: s.users[r.UserID], Target: s.targets[r.TargetID],
+		DurationSeconds: r.RequestedDurationSeconds, Created: r.Created}
 	s.mu.Unlock()
-	if r.RequestedDurationSeconds != nil {
-		d := time.Duration(*r.RequestedDurationSeconds) * time.Second
-		req.Duration = &d
-	}
 	v := s.Policy.Evaluate(req, s.now())
 	tier := strings.ToUpper(string(v.Tier))
 	risk, level := protocol.RiskElevated, "warn"
@@ -153,9 +150,9 @@ func (s *Source) item(r wgapi.TicketRequest) (adapter.Item, policy.Verdict) {
 		},
 		Reason: r.Description,
 	}
-	if req.Duration != nil {
-		it.Facts = append(it.Facts, protocol.Fact{Label: "Duration", Value: policy.Human(*req.Duration)})
-		it.Lease = &protocol.Lease{DurationS: int64(req.Duration.Seconds()), Scope: req.Target}
+	if d, ok := req.Duration(); ok {
+		it.Facts = append(it.Facts, protocol.Fact{Label: "Duration", Value: policy.Human(d)})
+		it.Lease = &protocol.Lease{DurationS: *req.DurationSeconds, Scope: req.Target}
 	}
 	if s.Policy.TTL > 0 {
 		it.Expires = r.Created.Add(s.Policy.TTL)

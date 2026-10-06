@@ -147,7 +147,9 @@ Every relay is untrusted by design, so the only questions are reachability, movi
   Approve and deny are gated on admin permission `ticket_requests_manage`.
 - `TicketRequest` = `{id, user_id, target_id, requested_duration_seconds, description, status, created, resolved_by_user_id, ticket_id, resolved_at, deny_reason}`.
 - Warpgate has **no webhooks**: new requests are found by polling.
-- Approve takes **no body**: you approve exactly the duration requested. Caps are enforced by denying.
+- Approve takes **no body**: you approve exactly the duration requested. Caps are enforced by denying, checked in
+  integer seconds (a large `requested_duration_seconds` wraps `time.Duration`). Warpgate's own
+  `ticket_max_duration_seconds` is configured as well, as defense in depth.
 - Warpgate cannot restrict which targets a user may *request*; the approver is the gate.
 - Warpgate's `allowed_ip_ranges` is checked for interactive and ticket logins, not for API tokens, so the approver
   token cannot be IP-pinned. Its protection is where it lives (the Warpgate host only).

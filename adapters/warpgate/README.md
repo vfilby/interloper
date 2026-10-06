@@ -22,7 +22,7 @@ From the environment (`deploy/adapter.env.default`, copied once to `/opt/interpo
 | `WARPGATE_URL` | (required) | Warpgate's base URL |
 | `WARPGATE_TOKEN_FILE` | `/run/secrets/warpgate-token` | the approver token |
 | `ALLOWED_REQUESTERS` | (required) | Warpgate usernames that may ask for tickets, comma-separated; others are denied |
-| `MAX_DURATION_RW`, `MAX_DURATION_ADMIN` | `2h` | longer tickets are denied without asking |
+| `MAX_DURATION_RW`, `MAX_DURATION_ADMIN` | `2h` | longer tickets are denied without asking; so are requests with no duration, ≤ 0 s, or over 30 days whatever these say |
 | `REQUEST_TTL` | `15m` | unanswered requests are **denied** at Warpgate after this (fail closed) |
 
 ## Deploying
@@ -35,6 +35,13 @@ Container hardening and layout: [docs/docker.md](../../docs/docker.md).
 The adapter needs a Warpgate API token that can approve and deny ticket requests (`ticket_requests_manage`) and do
 nothing else: a dedicated Warpgate user with no credentials but that token, and no access roles. Give the adapter its
 own user rather than sharing one, so it can be revoked alone.
+
+### Warpgate's own ticket cap (defense in depth)
+
+The adapter approves with no body, so Warpgate grants exactly the duration requested; the adapter's caps work by
+denying longer requests. Warpgate 0.28.6 enforces a maximum of its own only when `ticket_max_duration_seconds` is
+configured, so configure it, no higher than the larger of `MAX_DURATION_RW` and `MAX_DURATION_ADMIN` (7200 with the
+defaults). Then a bug in the adapter's checks cannot grant a ticket that outlives the cap.
 
 ### 2. Build the adapter and copy it to the Warpgate host
 
