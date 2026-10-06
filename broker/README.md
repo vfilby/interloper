@@ -34,6 +34,7 @@ Two listeners:
 | `-admin` | `127.0.0.1:8741` | management UI; everything else goes here |
 | `-url` | `http://127.0.0.1:8740` | the API base URL as phones reach it (goes into enrollment links); must be https when `-api` is not loopback |
 | `-state` | `hub-data` | state directory: `state.json`, `audit.jsonl`, `session.key` |
+| `-trusted-proxy` | | addresses or CIDRs of reverse proxies whose `X-Forwarded-For` names the client; failed enrollments are rate-limited per client, and without this every client behind the proxy shares one limit |
 | `-oidc-issuer`, `-oidc-client-id`, `-oidc-secret-file`, `-oidc-redirect`, `-oidc-admin-group` | | OIDC sign-in ([docs/runbooks/oidc.md](../docs/runbooks/oidc.md)) |
 | `-apns-key-file`, `-apns-key-id`, `-apns-team-id`, `-apns-topic` | | APNs wake-ups ([docs/runbooks/testflight.md](../docs/runbooks/testflight.md), step 5) |
 
