@@ -75,6 +75,9 @@ func (a *Admin) Handler() http.Handler {
 	if a.Auth == nil {
 		a.Auth = LocalAuth()
 	}
+	if a.Auth.Logins == nil {
+		a.Auth.Logins = a.Store
+	}
 	m := http.NewServeMux()
 	m.HandleFunc("GET /{$}", a.index)
 	m.HandleFunc("POST /enroll", a.enroll)
@@ -85,6 +88,7 @@ func (a *Admin) Handler() http.Handler {
 	m.HandleFunc("POST /devices/{id}/revoke", a.revoke)
 	m.HandleFunc("POST /devices/remove-revoked", a.admin(a.removeRevoked))
 	m.HandleFunc("POST /users/{id}/delete", a.admin(a.deleteUser))
+	m.HandleFunc("POST /logins/{id}/release", a.admin(a.releaseLogin))
 	m.HandleFunc("POST /adapters", a.admin(a.addAdapter))
 	m.HandleFunc("POST /adapters/{id}/remove", a.admin(a.removeAdapter))
 	m.HandleFunc("GET /audit", a.admin(a.audit))
@@ -167,6 +171,7 @@ type page struct {
 	Adapters   []Adapter
 	Devices    []Device
 	Requests   []Request
+	Logins     []LoginView // sign-in bindings, for admins behind OIDC
 	Flash      string
 	// enrollment
 	Link     string
@@ -198,6 +203,9 @@ func (a *Admin) overview(r *http.Request, flash string) page {
 	p := page{Title: "Clearing house", Me: me, Flash: flash}
 	if me.Admin {
 		p.Users, p.Adapters, p.Devices, p.Requests = a.Store.Users(), a.Store.Adapters(), a.Store.Devices(), a.Store.Requests()
+		if !a.Auth.Local {
+			p.Logins = a.Store.Logins()
+		}
 		for _, d := range p.Devices {
 			p.HasRevoked = p.HasRevoked || d.Revoked
 		}
@@ -412,6 +420,23 @@ func (a *Admin) deleteUser(w http.ResponseWriter, r *http.Request) {
 		Detail: fmt.Sprintf("%d device(s): %s", len(gone), strings.Join(gone, " "))})
 	a.render(w, "index.html", a.overview(r, "Deleted account "+id+" and its "+fmt.Sprint(len(gone))+" device(s) at the hub. "+
 		"Enrolling "+id+" again creates a new account with a new fingerprint: adapters must run trust add-user for it again."))
+}
+
+// releaseLogin unbinds a user id from the sign-in subject that holds it, so the next person to sign in with that
+// username gets it. The form must repeat the user id.
+func (a *Admin) releaseLogin(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if strings.TrimSpace(r.FormValue("confirm")) != id {
+		a.render(w, "index.html", a.overview(r, "Not released: type the user id ("+id+") to confirm."))
+		return
+	}
+	if err := a.Store.ReleaseLogin(id); err != nil {
+		a.render(w, "index.html", a.overview(r, "Releasing "+id+": "+err.Error()))
+		return
+	}
+	a.write(audit.Event{Time: time.Now(), Event: "login-released", Target: id})
+	a.render(w, "index.html", a.overview(r, "Released the sign-in for "+id+": the next person to sign in with username "+
+		id+" becomes hub user "+id+"."))
 }
 
 func (a *Admin) addAdapter(w http.ResponseWriter, r *http.Request) {

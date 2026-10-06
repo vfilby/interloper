@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
@@ -31,6 +32,7 @@ type fakeIdP struct {
 
 	mu       sync.Mutex
 	user     string
+	sub      string // the subject; "sub-" + user when empty
 	groups   []string
 	codes    map[string]authz // code -> what /authorize saw
 	tamper   func(claims map[string]any)
@@ -62,7 +64,7 @@ func newIdP(t *testing.T) *fakeIdP {
 		}
 		p.mu.Lock()
 		defer p.mu.Unlock()
-		sub := "sub-" + p.user
+		sub := p.subject()
 		if p.uiSub != "" {
 			sub = p.uiSub
 		}
@@ -114,15 +116,30 @@ func newIdP(t *testing.T) *fakeIdP {
 
 func (p *fakeIdP) as(user string, groups ...string) {
 	p.mu.Lock()
-	p.user, p.groups = user, groups
+	p.user, p.sub, p.groups = user, "", groups
 	p.mu.Unlock()
+}
+
+// asSub signs in a given subject with a given username: a person who renamed themselves.
+func (p *fakeIdP) asSub(sub, user string, groups ...string) {
+	p.mu.Lock()
+	p.user, p.sub, p.groups = user, sub, groups
+	p.mu.Unlock()
+}
+
+// subject is called with mu held.
+func (p *fakeIdP) subject() string {
+	if p.sub != "" {
+		return p.sub
+	}
+	return "sub-" + p.user
 }
 
 func (p *fakeIdP) idToken(nonce string) string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	now := time.Now()
-	claims := map[string]any{"iss": p.srv.URL, "aud": p.client, "sub": "sub-" + p.user, "iat": now.Unix(),
+	claims := map[string]any{"iss": p.srv.URL, "aud": p.client, "sub": p.subject(), "iat": now.Unix(),
 		"exp": now.Add(5 * time.Minute).Unix(), "nonce": nonce, "preferred_username": p.user, "groups": p.groups, "name": p.user}
 	if p.minimal {
 		delete(claims, "preferred_username")
@@ -373,6 +390,91 @@ func TestOIDCUserinfoFallback(t *testing.T) {
 	if resp, body := get(t, browser(), ui.URL+"/"); resp.StatusCode != http.StatusForbidden || !strings.Contains(body, "another subject") {
 		t.Fatalf("userinfo about another subject: %d %s", resp.StatusCode, body)
 	}
+}
+
+// The hub knows a person by (iss, sub), not by username: someone who renames themselves at the identity provider to
+// another user's name does not become that user, and the owner of a hub user id keeps it through a rename.
+func TestOIDCSubjectBinding(t *testing.T) {
+	idp, ui, st, browser := hubWithIdP(t)
+
+	idp.asSub("sub-kim", "kim")
+	kim := browser()
+	signIn(t, kim, ui.URL)
+	if code := post(t, kim, ui.URL+"/enroll", url.Values{"user": {"kim"}, "mode": {"new"}}); code != http.StatusSeeOther {
+		t.Fatalf("kim enrolling herself: %d", code)
+	}
+
+	// mallory sets her username to Kim: refused, before any session exists.
+	idp.asSub("sub-mallory", "Kim")
+	resp, body := get(t, browser(), ui.URL+"/")
+	if resp.StatusCode != http.StatusForbidden || !strings.Contains(body, "bound to another sign-in") {
+		t.Fatalf("another subject with kim's username: %d %s", resp.StatusCode, body)
+	}
+
+	// kim renames herself: still hub user kim, shown with her new username, and nothing more.
+	idp.asSub("sub-kim", "kimberly")
+	kim = browser()
+	page := signIn(t, kim, ui.URL)
+	if !strings.Contains(page, "Signed in as <strong>kim</strong> (username kimberly)") {
+		t.Fatal("renamed kim is not hub user kim")
+	}
+	if code := post(t, kim, ui.URL+"/enroll", url.Values{"user": {"kim"}, "mode": {"new"}}); code != http.StatusSeeOther {
+		t.Fatalf("renamed kim enrolling herself: %d", code)
+	}
+	if code := post(t, kim, ui.URL+"/enroll", url.Values{"user": {"kimberly"}, "mode": {"new"}}); code != http.StatusForbidden {
+		t.Fatalf("renamed kim enrolling for kimberly: %d", code)
+	}
+
+	// mallory's sign-in left nothing behind; kim's binding survives a restart.
+	logins := st.Logins()
+	if len(logins) != 1 || logins[0].User != "kim" || logins[0].Subject != "sub-kim" || logins[0].Issuer != idp.srv.URL ||
+		logins[0].Username != "kimberly" {
+		t.Fatalf("logins: %+v", logins)
+	}
+	st2, err := Open(st.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u, err := st2.SignIn(idp.srv.URL, "sub-kim", "kimberly", time.Now()); err != nil || u != "kim" {
+		t.Fatalf("after reopening: %q %v", u, err)
+	}
+	if _, err := st2.SignIn("https://other-issuer.example", "sub-kim", "kim", time.Now()); err == nil {
+		t.Fatal("the same subject from another issuer took kim")
+	}
+
+	// Releasing is for admins, and needs the user id typed again.
+	if code := post(t, kim, ui.URL+"/logins/kim/release", url.Values{"confirm": {"kim"}}); code != http.StatusForbidden {
+		t.Fatalf("kim releasing her sign-in: %d", code)
+	}
+	idp.as("vince", "interpose_admins")
+	vince := browser()
+	page = signIn(t, vince, ui.URL)
+	if !strings.Contains(page, `action="/logins/kim/release"`) {
+		t.Fatal("admin overview lists no sign-in to release")
+	}
+	if _, body := postBody(t, vince, ui.URL+"/logins/kim/release", url.Values{"confirm": {"kimx"}}); !strings.Contains(body, "Not released") {
+		t.Fatal("released without confirmation")
+	}
+	if _, body := postBody(t, vince, ui.URL+"/logins/kim/release", url.Values{"confirm": {"kim"}}); !strings.Contains(body, "Released the sign-in for kim") {
+		t.Fatalf("release: %s", body)
+	}
+
+	// Once released, the next subject with the username gets it (kim's IdP account recreated, say).
+	idp.asSub("sub-kim-new", "kim")
+	if page := signIn(t, browser(), ui.URL); !strings.Contains(page, "Signed in as <strong>kim</strong>") {
+		t.Fatal("new subject did not get the released user id")
+	}
+}
+
+func postBody(t *testing.T, c *http.Client, u string, form url.Values) (int, string) {
+	t.Helper()
+	resp, err := c.PostForm(u, form)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(b)
 }
 
 func TestSafeNext(t *testing.T) {

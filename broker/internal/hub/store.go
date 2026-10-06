@@ -113,6 +113,7 @@ type state struct {
 	Decisions []QueuedDecision    `json:"decisions"`
 	Codes     []enrollCode        `json:"codes"`
 	Users     map[string]*User    `json:"users"`
+	Logins    map[string]*Login   `json:"logins,omitempty"` // hub user id -> the OIDC subject bound to it
 }
 
 // Store is the hub's state: in memory, written through to one JSON file. The file is bounded by the limits above.
@@ -126,7 +127,8 @@ type Store struct {
 
 func Open(path string) (*Store, error) {
 	st := &Store{path: path, changed: make(chan struct{}), heads: map[string]protocol.Head{},
-		s: state{Adapters: map[string]*Adapter{}, Devices: map[string]*Device{}, Requests: map[string]*Request{}, Users: map[string]*User{}}}
+		s: state{Adapters: map[string]*Adapter{}, Devices: map[string]*Device{}, Requests: map[string]*Request{}, Users: map[string]*User{},
+			Logins: map[string]*Login{}}}
 	b, err := os.ReadFile(path)
 	switch {
 	case errors.Is(err, os.ErrNotExist):
@@ -147,6 +149,9 @@ func Open(path string) (*Store, error) {
 		}
 		if st.s.Users == nil {
 			st.s.Users = map[string]*User{}
+		}
+		if st.s.Logins == nil {
+			st.s.Logins = map[string]*Login{}
 		}
 	}
 	return st, nil
@@ -193,6 +198,79 @@ func hashSecret(s string) string {
 
 func sameHash(secret, hash string) bool {
 	return subtle.ConstantTimeCompare([]byte(hashSecret(secret)), []byte(hash)) == 1
+}
+
+// ---- sign-in bindings ----
+
+// Login binds an OIDC subject to a hub user id. OIDC says only (iss, sub) identifies a person: a username can be
+// changed, and on some providers by the user themselves. So the hub takes the username as the user id only the first
+// time a subject signs in, and from then on knows the person by subject, whatever their username has become.
+type Login struct {
+	Issuer   string    `json:"iss"`
+	Subject  string    `json:"sub"`
+	Username string    `json:"username"` // as of the last sign-in, for display
+	BoundAt  time.Time `json:"bound_at"`
+}
+
+// LoginView is a binding with the hub user id it is for.
+type LoginView struct {
+	User string
+	Login
+}
+
+// ErrNameTaken: the username is bound to another subject.
+var ErrNameTaken = errors.New("bound to another sign-in")
+
+// SignIn returns the hub user id of an OIDC subject. A subject seen before gets the user id it was bound to. A new
+// one is bound to username, unless another subject holds that: then it is refused (ErrNameTaken), as is a username
+// that is not a valid user id.
+func (st *Store) SignIn(iss, sub, username string, now time.Time) (string, error) {
+	if iss == "" || sub == "" {
+		return "", errors.New("sign-in without an issuer and subject")
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	for id, l := range st.s.Logins {
+		if l.Issuer == iss && l.Subject == sub {
+			if username != "" && l.Username != username {
+				l.Username = username
+				return id, st.commit()
+			}
+			return id, nil
+		}
+	}
+	if !protocol.ValidUserID(username) {
+		return "", fmt.Errorf("username %q is not usable as a hub user id (a-z 0-9 . _ -, up to 40)", username)
+	}
+	if _, ok := st.s.Logins[username]; ok {
+		return "", fmt.Errorf("hub user %s is %w: an admin can release it if the account at the identity provider was recreated", username, ErrNameTaken)
+	}
+	st.s.Logins[username] = &Login{Issuer: iss, Subject: sub, Username: username, BoundAt: now}
+	return username, st.commit()
+}
+
+// Logins lists the sign-in bindings, by user id.
+func (st *Store) Logins() []LoginView {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	out := make([]LoginView, 0, len(st.s.Logins))
+	for id, l := range st.s.Logins {
+		out = append(out, LoginView{User: id, Login: *l})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].User < out[j].User })
+	return out
+}
+
+// ReleaseLogin unbinds a user id from its subject: the next subject to sign in with that username gets it. For a
+// person whose account at the identity provider was recreated (a new subject), or a move to another provider.
+func (st *Store) ReleaseLogin(user string) error {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if _, ok := st.s.Logins[user]; !ok {
+		return ErrUnknown
+	}
+	delete(st.s.Logins, user)
+	return st.commit()
 }
 
 // ---- adapters ----
