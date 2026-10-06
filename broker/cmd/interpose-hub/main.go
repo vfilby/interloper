@@ -2,9 +2,9 @@
 //
 // It holds no key that can approve anything (docs/PROTOCOL.md). Two listeners:
 //
-//	-api   :8740            devices and adapters (LAN/VPN; later the off-network path)
+//	-api   127.0.0.1:8740   devices and adapters (LAN/VPN; later the off-network path)
 //	-admin 127.0.0.1:8741   management UI
-//	-url   http://…:8740    the API base URL devices should use; goes into the enrollment link
+//	-url   https://…        the API base URL devices should use; goes into the enrollment link
 //	-state ./hub-data       state.json and audit.jsonl
 //
 // Sign-in to the management UI (and phone sign-in) is OIDC, e.g. Authelia (docs/runbooks/oidc.md):
@@ -18,6 +18,10 @@
 //
 // Without -oidc-issuer there is no sign-in at all (everyone is an admin): the hub then refuses to start unless the
 // management UI listens on loopback only.
+//
+// The hub speaks plain HTTP; TLS is the reverse proxy's job. Tokens and enrollment codes must not cross a network in
+// the clear, so the hub refuses to start with a non-loopback -api unless -url is https (that is, a proxy terminates
+// TLS in front of it), and with an http -oidc-redirect unless it names a loopback host.
 package main
 
 import (
@@ -29,6 +33,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -49,9 +54,9 @@ type config struct {
 
 func main() {
 	var c config
-	flag.StringVar(&c.apiAddr, "api", ":8740", "device and adapter API listen address")
+	flag.StringVar(&c.apiAddr, "api", "127.0.0.1:8740", "device and adapter API listen address (non-loopback needs an https -url)")
 	flag.StringVar(&c.adminAddr, "admin", "127.0.0.1:8741", "management UI listen address")
-	flag.StringVar(&c.hubURL, "url", "http://127.0.0.1:8740", "API base URL as devices reach it")
+	flag.StringVar(&c.hubURL, "url", "http://127.0.0.1:8740", "API base URL as devices reach it (https unless -api is loopback)")
 	flag.StringVar(&c.stateDir, "state", "hub-data", "state directory")
 	flag.StringVar(&c.issuer, "oidc-issuer", "", "OIDC issuer URL; empty: no sign-in (loopback only)")
 	flag.StringVar(&c.clientID, "oidc-client-id", "interpose", "OIDC client id")
@@ -73,6 +78,9 @@ func main() {
 }
 
 func run(log *slog.Logger, c config) error {
+	if err := checkTransport(c); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(c.stateDir, 0o700); err != nil {
 		return err
 	}
@@ -105,10 +113,16 @@ func run(log *slog.Logger, c config) error {
 		}
 		push = &apns.Client{KeyID: c.apnsKeyID, TeamID: c.apnsTeamID, Topic: c.apnsTopic, Key: key}
 	}
-	api := &http.Server{Addr: c.apiAddr, Handler: (&hub.API{Store: st, Audit: a, Log: log, Push: push}).Handler(),
-		ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}
-	admin := &http.Server{Addr: c.adminAddr, ReadHeaderTimeout: 10 * time.Second,
-		Handler: (&hub.Admin{Store: st, Audit: a, AuditPath: auditPath, HubURL: c.hubURL, Log: log, Auth: auth}).Handler()}
+	// Timeouts bound how long a slow client can hold a connection (MaxBytesReader bounds only bytes). The API's
+	// WriteTimeout leaves room for the decisions long-poll.
+	apiHandler := &hub.API{Store: st, Audit: a, Log: log, Push: push}
+	api := &http.Server{Addr: c.apiAddr, Handler: apiHandler.Handler(),
+		ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second,
+		WriteTimeout: apiHandler.MaxWait + 30*time.Second, IdleTimeout: 2 * time.Minute}
+	admin := &http.Server{Addr: c.adminAddr,
+		Handler:           (&hub.Admin{Store: st, Audit: a, AuditPath: auditPath, HubURL: c.hubURL, Log: log, Auth: auth}).Handler(),
+		ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: time.Minute,
+		IdleTimeout: 2 * time.Minute}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -139,10 +153,47 @@ func run(log *slog.Logger, c config) error {
 	return nil
 }
 
+// checkTransport refuses configurations that would carry bearer tokens, enrollment codes or session cookies over
+// plain HTTP across a network: a non-loopback API whose devices are told an http URL, and an http OIDC redirect to a
+// host other than loopback (the session cookie is Secure only over https).
+func checkTransport(c config) error {
+	u, err := url.Parse(c.hubURL)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return fmt.Errorf("-url must be an http(s) URL (got %q)", c.hubURL)
+	}
+	if !loopbackAddr(c.apiAddr) && u.Scheme != "https" {
+		return fmt.Errorf("-api %q is not loopback, so -url must be https (a reverse proxy terminating TLS in front of the hub); got %q", c.apiAddr, c.hubURL)
+	}
+	if c.redirect != "" {
+		r, err := url.Parse(c.redirect)
+		if err != nil || r.Host == "" {
+			return fmt.Errorf("-oidc-redirect must be an absolute URL (got %q)", c.redirect)
+		}
+		if r.Scheme != "https" && !(r.Scheme == "http" && loopbackHost(r.Hostname())) {
+			return fmt.Errorf("-oidc-redirect must be https unless it is on loopback (got %q)", c.redirect)
+		}
+	}
+	return nil
+}
+
+// loopbackAddr reports whether a listen address binds loopback only (":8740" binds every interface).
+func loopbackAddr(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	ip := net.ParseIP(host)
+	return err == nil && ip != nil && ip.IsLoopback()
+}
+
+func loopbackHost(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
 func setupAuth(c config) (*hub.Auth, error) {
 	if c.issuer == "" {
-		host, _, err := net.SplitHostPort(c.adminAddr)
-		if ip := net.ParseIP(host); err != nil || ip == nil || !ip.IsLoopback() {
+		if !loopbackAddr(c.adminAddr) {
 			return nil, fmt.Errorf("no -oidc-issuer: the management UI would have no sign-in, so -admin must be a loopback address (got %q)", c.adminAddr)
 		}
 		return hub.LocalAuth(), nil
