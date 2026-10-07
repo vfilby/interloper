@@ -5,6 +5,29 @@ import XCTest
 /// xcodebuild. The hub runs without OIDC (local mode), so phone sign-in answers at once for `?user=vince`.
 /// Expects one normal-risk request titled "claude wants RW on db-01" and one high-risk "helper wants ADMIN on web-02".
 final class ApproveFlowUITests: XCTestCase {
+    /// The app switcher's snapshot is taken once the scene is no longer active: the screen must be covered by then.
+    /// Notification Center pulled over the app takes it out of the active state too (to background, on iOS 27), and
+    /// leaves its accessibility tree to check. Needs no hub.
+    func testPrivacyCoverWhenNotActive() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-interposeReset"]
+        app.launch()
+        XCTAssertTrue(app.textFields["interpose-hub.home.example"].waitForExistence(timeout: 10))
+        let cover = app.descendants(matching: .any)["privacy-cover"]
+        XCTAssertFalse(cover.exists, "covered while active")
+
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.001))
+            .press(forDuration: 0.1, thenDragTo: springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.7)))
+        XCTAssertTrue(cover.waitForExistence(timeout: 5), "not covered once not active")
+        attach(XCUIScreen.main, "covered")
+
+        springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.99))
+            .press(forDuration: 0.1, thenDragTo: springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)))
+        XCTAssertTrue(app.textFields["interpose-hub.home.example"].waitForExistence(timeout: 10))
+        XCTAssertFalse(cover.waitForExistence(timeout: 2), "still covered once active again")
+    }
+
     func testEnrollApproveAndHoldToApprove() throws {
         guard let admin = ProcessInfo.processInfo.environment["INTERPOSE_ADMIN_URL"], !admin.isEmpty else {
             throw XCTSkip("INTERPOSE_ADMIN_URL not set: needs a running hub")
@@ -189,7 +212,7 @@ final class ApproveFlowUITests: XCTestCase {
         return html[r].replacingOccurrences(of: "&amp;", with: "&")
     }
 
-    private func attach(_ app: XCUIApplication, _ name: String) {
+    private func attach(_ app: XCUIScreenshotProviding, _ name: String) {
         let a = XCTAttachment(screenshot: app.screenshot())
         a.name = name
         a.lifetime = .keepAlways

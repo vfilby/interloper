@@ -66,7 +66,7 @@ struct InboxView: View {
 
             if !model.refused.isEmpty {
                 Section {
-                    ForEach(model.refused, id: \.self) { Text($0).font(.footnote).foregroundStyle(.red) }
+                    ForEach(model.refused, id: \.self) { Text(sanitize($0)).font(.footnote).foregroundStyle(.red) }
                 } header: {
                     Text("Refused (not shown)")
                 } footer: {
@@ -75,7 +75,7 @@ struct InboxView: View {
             }
 
             if let e = model.lastError {
-                Section { Text(e).font(.footnote).foregroundStyle(.red) }
+                Section { Text(sanitize(e)).font(.footnote).foregroundStyle(.red) }
             }
         }
         .navigationTitle("Requests")
@@ -134,13 +134,13 @@ struct OutcomeText: View {
         switch outcome {
         case .none: Text("waiting")
         case .sent: Text("sent, waiting for the adapter")
-        case .final(let a): Text("\(a.outcome) (confirmed by \(sanitize(a.adapter)))")
+        case .final(let a): Text("\(sanitize(a.outcome)) (confirmed by \(sanitize(a.adapter)))")
             .foregroundStyle(a.outcome == "expired" ? Color.secondary : Color.green)
         case .note(let a):
             Text("\(a.outcome == "rejected" ? "Rejected by adapter" : "Service call failed"): \(sanitize(a.detail ?? "")). Still pending.")
                 .foregroundStyle(.orange)
-        case .unconfirmed(let why): Text("unconfirmed: \(why)").foregroundStyle(.orange)
-        case .failed(let why): Text("not delivered: \(why)").foregroundStyle(.red)
+        case .unconfirmed(let why): Text("unconfirmed: \(sanitize(why))").foregroundStyle(.orange)
+        case .failed(let why): Text("not delivered: \(sanitize(why))").foregroundStyle(.red)
         }
     }
 }

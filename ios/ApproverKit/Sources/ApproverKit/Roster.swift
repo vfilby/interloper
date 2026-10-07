@@ -188,28 +188,32 @@ public func nextRoster(after head: Head, members: [Envelope], now: Date = Date()
 }
 
 extension Device {
-    /// Signs a roster with the approve key (Face ID / PIN on a device).
-    public func sign(_ roster: Roster, pin: String? = nil) throws -> Envelope {
+    /// Signs a roster with the approve key (Face ID / PIN on a device). `reason` is what the Face ID prompt says.
+    public func sign(_ roster: Roster, reason: String, pin: String? = nil) throws -> Envelope {
         let id = try deviceID()
         let payload = try Coders.encoder.encode(roster)
-        return Envelope(alg: Envelope.es256, kid: id, payload: B64.encode(payload), sig: B64.encode(try keys.signApprove(payload, pin: pin)))
+        return Envelope(alg: Envelope.es256, kid: id, payload: B64.encode(payload),
+                        sig: B64.encode(try keys.signApprove(payload, pin: pin, reason: reason)))
     }
 
     /// r1 of a new user: this device, alone.
     public func genesis(user: String, card: Envelope, now: Date = Date(), pin: String? = nil) throws -> Envelope {
         try sign(Roster(v: protocolVersion, user: user, seq: 1, prev: "", members: [Member(card: card)],
-                        ts: Int64(now.timeIntervalSince1970)), pin: pin)
+                        ts: Int64(now.timeIntervalSince1970)), reason: SigningReason.genesis(user: user), pin: pin)
     }
 
     /// The roster after head with card added (approving a join).
     public func admit(_ card: Envelope, after head: Head, now: Date = Date(), pin: String? = nil) throws -> Envelope {
-        try sign(nextRoster(after: head, members: head.cards + [card], now: now), pin: pin)
+        let name = (try? verifyCard(card))?.name ?? card.kid
+        return try sign(nextRoster(after: head, members: head.cards + [card], now: now), reason: SigningReason.admit(name: name), pin: pin)
     }
 
     /// The roster after head without deviceID.
     public func remove(_ deviceID: String, after head: Head, now: Date = Date(), pin: String? = nil) throws -> Envelope {
         let keep = head.cards.filter { $0.kid != deviceID }
         guard !keep.isEmpty else { throw ProtocolError.malformed("cannot remove the last device of an account") }
-        return try sign(nextRoster(after: head, members: keep, now: now), pin: pin)
+        let reason = deviceID == (try? self.deviceID()) ? SigningReason.removeSelf()
+            : SigningReason.remove(name: head.devices[deviceID]?.name ?? deviceID)
+        return try sign(nextRoster(after: head, members: keep, now: now), reason: reason, pin: pin)
     }
 }

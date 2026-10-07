@@ -31,7 +31,7 @@ struct SettingsView: View {
 
             Section {
                 LabeledContent("Hub") { Text(model.hubURL?.absoluteString ?? "—").font(.footnote.monospaced()) }
-                if let e = model.pushError { Text(e).font(.footnote).foregroundStyle(.red) }
+                if let e = model.pushError { Text(sanitize(e)).font(.footnote).foregroundStyle(.red) }
                 Button("Connect to another server…") {
                     model.pendingLink = nil
                     model.sheet = .switchHub
@@ -45,11 +45,11 @@ struct SettingsView: View {
 
             Section {
                 ForEach(model.adapters) { a in
-                    LabeledContent(a.id) { Text(a.fingerprint).font(.footnote.monospaced()) }
+                    LabeledContent(sanitize(a.id)) { Text(a.fingerprint).font(.footnote.monospaced()) }
                 }
                 ForEach(model.conflicts) { c in
                     VStack(alignment: .leading) {
-                        Text("\(c.id): the hub offers a different key").foregroundStyle(.red)
+                        Text("\(sanitize(c.id)): the hub offers a different key").foregroundStyle(.red)
                         Text("pinned \(c.pinned), offered \(c.offered). Not used.").font(.footnote.monospaced())
                     }
                 }

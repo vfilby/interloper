@@ -48,8 +48,8 @@ targets:
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         NSFaceIDUsageDescription: Face ID unlocks the key that signs your approvals.
-        NSAppTransportSecurity:
-          NSAllowsLocalNetworking: true
+        # No ATS exceptions: hubs are https. The app itself also refuses http except to loopback in Debug builds
+        # (HubTransport), which also covers IP-literal hosts that ATS does not police.
         NSLocalNetworkUsageDescription: The app talks to your Interpose server on the local network.
         NSCameraUsageDescription: The camera scans the enrollment QR code from your Interpose server.
         # Only Apple's own encryption (CryptoKit, Security), which needs no export documentation (runbook).

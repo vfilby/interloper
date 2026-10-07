@@ -51,8 +51,8 @@ public protocol KeyStore: Sendable {
     func generate(pin: String?) throws
     func publicKeys() throws -> DevicePublicKeys
     /// Signs with the approve key: Face ID if `pin` is nil, else the app PIN (counted; see ApproveKeyError). Raw r||s,
-    /// 64 bytes.
-    func signApprove(_ data: Data, pin: String?) throws -> Data
+    /// 64 bytes. `reason` is what the Face ID prompt says this signature is for (SigningReason).
+    func signApprove(_ data: Data, pin: String?, reason: String) throws -> Data
     /// Signs with the deny key: needs only an unlocked device.
     func signDeny(_ data: Data) throws -> Data
     /// HPKE open (P256_SHA256_AES_GCM_256) with the encryption key.
@@ -68,6 +68,33 @@ public protocol KeyStore: Sendable {
     var hasLegacyApproveKey: Bool { get }
     /// Typed-PIN failures in a row, and the lockout they caused.
     var pinFailures: (count: Int, lockedUntil: Date?) { get }
+    /// Whether this store may create keys and enroll. False for software keys on hardware: adapters cannot tell them
+    /// from Secure Enclave keys, so such a device is refused rather than enrolled insecurely.
+    var canEnroll: Bool { get }
+}
+
+/// Why the store refuses to enroll (KeyStore.canEnroll).
+public struct NoSecureEnclave: Error, LocalizedError, Equatable {
+    public init() {}
+    public var errorDescription: String? {
+        "This device has no Secure Enclave. Interpose does not create software keys on a phone: adapters could not tell them from protected ones."
+    }
+}
+
+/// What the Face ID prompt says each approve-key signature is for. Hub- and adapter-written parts are sanitized and
+/// shortened: the prompt is one line the person reads before deciding.
+public enum SigningReason {
+    public static func card() -> String { "Sign this device's card to connect it" }
+    public static func genesis(user: String) -> String { "Create the account \(short(user)) with this device" }
+    public static func admit(name: String) -> String { "Add \(short(name)) to your account" }
+    public static func remove(name: String) -> String { "Remove \(short(name)) from your account" }
+    public static func removeSelf() -> String { "Remove this device from your account" }
+    public static func approve(title: String) -> String { "Approve: \(short(title))" }
+
+    static func short(_ s: String, max: Int = 80) -> String {
+        let t = sanitize(s)
+        return t.count <= max ? t : String(t.prefix(max - 1)) + "…"
+    }
 }
 
 public enum KeyStoreKind: String, Sendable {
@@ -91,7 +118,10 @@ public func defaultKeyStore() -> KeyStore {
     #if targetEnvironment(simulator)
     return SoftwareKeyStore(storage: KeychainStorage())
     #else
-    return SecureEnclave.isAvailable ? SecureEnclaveKeyStore(storage: KeychainStorage()) : SoftwareKeyStore(storage: KeychainStorage())
+    // Hardware without a Secure Enclave gets a software store that refuses to enroll (canEnroll), never silently
+    // software keys that would look like protected ones to adapters.
+    return SecureEnclave.isAvailable ? SecureEnclaveKeyStore(storage: KeychainStorage())
+        : SoftwareKeyStore(storage: KeychainStorage(), onHardware: true)
     #endif
 }
 
@@ -101,6 +131,7 @@ public final class SecureEnclaveKeyStore: KeyStore, @unchecked Sendable {
     private let storage: SecretStorage
     private let passcode: ApprovePasscode
     public let kind = KeyStoreKind.secureEnclave
+    public var canEnroll: Bool { true }
 
     public init(storage: SecretStorage) {
         self.storage = storage
@@ -244,9 +275,9 @@ public final class SecureEnclaveKeyStore: KeyStore, @unchecked Sendable {
 
     /// A typed PIN is a counted try. Otherwise Face ID opens the stored password (same context, so the key does not
     /// ask again). A typed PIN is never saved for Face ID here: that is enableFaceID, after the app asks.
-    public func signApprove(_ data: Data, pin: String?) throws -> Data {
+    public func signApprove(_ data: Data, pin: String?, reason: String) throws -> Data {
         let ctx = LAContext()
-        ctx.localizedReason = "Approve the request"
+        ctx.localizedReason = reason
         if let pin, !pin.isEmpty {
             return try passcode.withPIN(pin, wipe: reset) { try sign(data, password: $0, ctx) }
         }
@@ -285,11 +316,17 @@ public final class SecureEnclaveKeyStore: KeyStore, @unchecked Sendable {
 // MARK: - Software (simulator, tests)
 
 /// Plain CryptoKit keys kept in `storage`. Anyone who can read the storage can approve: testing only.
+/// `onHardware`: a phone without a Secure Enclave, which must not enroll with these (canEnroll, generate).
 public final class SoftwareKeyStore: KeyStore, @unchecked Sendable {
     private let storage: SecretStorage
     public let kind = KeyStoreKind.software
+    public let onHardware: Bool
+    public var canEnroll: Bool { !onHardware }
 
-    public init(storage: SecretStorage) { self.storage = storage }
+    public init(storage: SecretStorage, onHardware: Bool = false) {
+        self.storage = storage
+        self.onHardware = onHardware
+    }
 
     /// A store holding the given raw P-256 scalars (CryptoKit rawRepresentation), for interop tests.
     public convenience init(approveRaw: Data, denyRaw: Data, encRaw: Data) throws {
@@ -307,6 +344,7 @@ public final class SoftwareKeyStore: KeyStore, @unchecked Sendable {
     }
 
     public func generate(pin: String?) throws {
+        guard canEnroll else { throw NoSecureEnclave() }
         try storage.set("sw.approve", P256.Signing.PrivateKey().rawRepresentation)
         try storage.set("sw.deny", P256.Signing.PrivateKey().rawRepresentation)
         try storage.set("sw.enc", P256.KeyAgreement.PrivateKey().rawRepresentation)
@@ -324,7 +362,7 @@ public final class SoftwareKeyStore: KeyStore, @unchecked Sendable {
             enc: try P256.KeyAgreement.PrivateKey(rawRepresentation: need("enc")).publicKey.x963Representation)
     }
 
-    public func signApprove(_ data: Data, pin: String?) throws -> Data {
+    public func signApprove(_ data: Data, pin: String?, reason: String) throws -> Data {
         try P256.Signing.PrivateKey(rawRepresentation: need("approve")).signature(for: data).rawRepresentation
     }
 

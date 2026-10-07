@@ -46,10 +46,8 @@ public enum SignIn {
     public static func hello(_ base: URL, session: URLSession = .shared) async throws -> ServerInfo {
         var req = URLRequest(url: base.appendingPathComponent("app/hello"))
         req.timeoutInterval = 10
-        let (data, resp) = try await session.data(for: req)
-        guard let http = resp as? HTTPURLResponse, http.statusCode == 200 else {
-            throw Failure.notInterpose("HTTP \((resp as? HTTPURLResponse)?.statusCode ?? 0)")
-        }
+        let (data, code) = try await HubTransport.fetch(req, session: session, limit: 64 << 10)
+        guard code == 200 else { throw Failure.notInterpose("HTTP \(code)") }
         guard let info = try? JSONDecoder().decode(ServerInfo.self, from: data), info.service == "interloper" else {
             throw Failure.notInterpose("it does not answer like one")
         }

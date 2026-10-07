@@ -25,7 +25,7 @@ struct MembershipBanner: View {
 
     var body: some View {
         if let e = model.rosterError {
-            Section { Text(e).font(.footnote).foregroundStyle(.red) } footer: {
+            Section { Text(sanitize(e)).font(.footnote).foregroundStyle(.red) } footer: {
                 Text("The last verified device list stays in use.")
             }
         }
@@ -178,7 +178,7 @@ struct JoinDetailView: View {
                 .disabled(working || !model.canApprove || joinFingerprint(join) == "card does not verify")
                 Button("Ignore", role: .cancel) { dismiss() }
             }
-            if let error { Section { Text(error).foregroundStyle(.red).font(.footnote) } }
+            if let error { Section { Text(sanitize(error)).foregroundStyle(.red).font(.footnote) } }
         }
         .navigationTitle("Join request")
         .navigationBarTitleDisplayMode(.inline)
@@ -239,7 +239,7 @@ struct AccountSection: View {
             } else {
                 Text("No verified device list yet.").foregroundStyle(.secondary)
             }
-            if let error { Text(error).font(.footnote).foregroundStyle(.red) }
+            if let error { Text(sanitize(error)).font(.footnote).foregroundStyle(.red) }
             DisclosureGroup("This device's keys") { DeviceKeysRows() }
         } header: {
             Text("Devices on this account" + (model.head.map { " (roster \($0.roster.seq))" } ?? ""))
