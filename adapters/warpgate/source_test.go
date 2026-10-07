@@ -1,6 +1,10 @@
 package warpgate
 
 import (
+	"context"
+	"errors"
+	"io"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -76,5 +80,49 @@ func TestItemReasonCleaned(t *testing.T) {
 	}
 	if got := reason(strings.Repeat("x", 100_000)); len(got) != MaxReason {
 		t.Errorf("reason of %d bytes", len(got))
+	}
+}
+
+type fakeWG struct {
+	reqs    []wgapi.TicketRequest
+	denyErr error
+	denied  []string
+}
+
+func (f *fakeWG) PendingRequests(context.Context) ([]wgapi.TicketRequest, error) { return f.reqs, nil }
+func (f *fakeWG) Usernames(context.Context) (map[string]string, error) {
+	return map[string]string{"u1": "claude", "u2": "mallory"}, nil
+}
+func (f *fakeWG) TargetNames(context.Context) (map[string]string, error) {
+	return map[string]string{"t1": "db-01-rw"}, nil
+}
+func (f *fakeWG) Approve(context.Context, string) error { return nil }
+func (f *fakeWG) Deny(_ context.Context, id, _ string) error {
+	f.denied = append(f.denied, id)
+	return f.denyErr
+}
+
+// A policy-denied request Warpgate will not let the adapter deny must not hold up the requests behind it.
+func TestPolicyDenyFailureSkipped(t *testing.T) {
+	now := time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)
+	secs := int64(3600)
+	wg := &fakeWG{denyErr: errors.New("HTTP 500"), reqs: []wgapi.TicketRequest{
+		{ID: "bad", UserID: "u2", TargetID: "t1", RequestedDurationSeconds: &secs, Created: now},
+		{ID: "good", UserID: "u1", TargetID: "t1", RequestedDurationSeconds: &secs, Created: now},
+	}}
+	s := &Source{WG: wg, Now: func() time.Time { return now }, Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Policy: policy.Policy{Requesters: map[string]bool{"claude": true}, MaxDuration: map[policy.Tier]time.Duration{policy.TierRW: 2 * time.Hour}}}
+	items, err := s.Pending(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].Key != "good" {
+		t.Fatalf("items %+v, want only good", items)
+	}
+	if len(wg.denied) != 1 || wg.denied[0] != "bad" {
+		t.Fatalf("denied %v", wg.denied)
+	}
+	if _, ok, err := s.Current(context.Background(), "bad"); ok || err != nil {
+		t.Fatalf("policy-denied request is current: ok %v, err %v", ok, err)
 	}
 }

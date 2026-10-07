@@ -31,6 +31,9 @@ type Trust struct {
 	pins                []Pin
 	chains              map[string][]protocol.Envelope // user -> newest verified chain
 	heads               map[string]protocol.Head
+
+	// Dropped says which saved chains LoadTrust set aside because they no longer verify against their pin.
+	Dropped []error
 }
 
 const (
@@ -58,7 +61,11 @@ func LoadTrust(dir string) (*Trust, error) {
 			if ch, ok := saved[p.User]; ok {
 				h, err := protocol.VerifyChain(ch, p.User, p.Account)
 				if err != nil {
-					return nil, fmt.Errorf("%s: saved chain for %s: %w", t.headsPath, p.User, err)
+					// Most likely the user was re-pinned to another account while the adapter was stopped. Either way
+					// the chain is not one for this pin: drop it, and the next refresh verifies a fresh one from the
+					// pin. Nobody of that user can decide until then.
+					t.Dropped = append(t.Dropped, fmt.Errorf("%s: saved chain for %s does not verify against the pin; dropped: %w", t.headsPath, p.User, err))
+					continue
 				}
 				t.chains[p.User], t.heads[p.User] = ch, h
 			}

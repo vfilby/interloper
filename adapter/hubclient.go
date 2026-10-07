@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -65,12 +66,44 @@ func (h *HubClient) do(ctx context.Context, method, path string, in, out any) er
 	defer resp.Body.Close()
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("hub %s %s: HTTP %d: %s", method, path, resp.StatusCode, strings.TrimSpace(string(data)))
+		return fmt.Errorf("hub %s %s: HTTP %d: %s", method, path, resp.StatusCode, snippet(data))
 	}
 	if out != nil && len(data) > 0 {
 		return json.Unmarshal(data, out)
 	}
 	return nil
+}
+
+// snippet is as much of an error body as goes into a log line.
+func snippet(b []byte) string {
+	s := strings.TrimSpace(string(b))
+	if len(s) > 200 {
+		s = s[:200] + "…"
+	}
+	return s
+}
+
+// CheckURL accepts https, and plain http only to a loopback host (an IP literal or localhost): a token, decisions or a
+// service credential must not cross the network in the clear.
+func CheckURL(what, raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("%s %q: %w", what, raw, err)
+	}
+	switch {
+	case u.Host == "":
+		return fmt.Errorf("%s %q: want an absolute URL such as https://host", what, raw)
+	case u.Scheme == "https":
+		return nil
+	case u.Scheme == "http":
+		h := u.Hostname()
+		if ip := net.ParseIP(h); h == "localhost" || (ip != nil && ip.IsLoopback()) {
+			return nil
+		}
+		return fmt.Errorf("%s %q: plain http is only allowed to a loopback address; use https", what, raw)
+	default:
+		return fmt.Errorf("%s %q: scheme must be https (or http to a loopback address)", what, raw)
+	}
 }
 
 func (h *HubClient) Publish(ctx context.Context, r PublishRequest) error {

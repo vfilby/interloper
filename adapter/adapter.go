@@ -220,14 +220,20 @@ func (ad *Adapter) Tick(ctx context.Context) error {
 			Target: it.Key, Description: it.Reason, Detail: it.Title})
 	}
 
+	// Published is only read and written under mu: the decision loop reads it too (finish, save).
+	type job struct {
+		o         *open
+		published bool
+	}
 	ad.mu.Lock()
-	var work []*open
+	var work []job
 	for _, o := range ad.open {
-		work = append(work, o)
+		work = append(work, job{o, o.Published})
 	}
 	ad.mu.Unlock()
 
-	for _, o := range work {
+	for _, j := range work {
+		o := j.o
 		switch {
 		case live[o.Key].Key == "":
 			ad.finish(ctx, o, protocol.OutcomeExpired, "resolved outside the clearing house", nil)
@@ -238,7 +244,7 @@ func (ad *Adapter) Tick(ctx context.Context) error {
 				continue
 			}
 			ad.finish(ctx, o, protocol.OutcomeExpired, "unanswered; denied", nil)
-		case !o.Published:
+		case !j.published:
 			ad.publish(ctx, o)
 		}
 	}
@@ -457,6 +463,7 @@ func (ad *Adapter) finish(ctx context.Context, o *open, outcome, detail string, 
 	ad.mu.Lock()
 	_, still := ad.open[o.Record.ID]
 	delete(ad.open, o.Record.ID)
+	published := o.Published
 	ad.mu.Unlock()
 	if !still {
 		return // the poll loop and the decision loop raced; the other one finished it
@@ -466,7 +473,7 @@ func (ad *Adapter) finish(ctx context.Context, o *open, outcome, detail string, 
 		de = *dec
 	}
 	ad.write(audit.Event{Time: ad.now(), Event: outcome, RequestID: o.Record.ID, Target: o.Key, Device: de.Kid, Detail: detail})
-	if o.Published {
+	if published {
 		ad.sendAck(ctx, o, outcome, detail, de)
 	}
 }

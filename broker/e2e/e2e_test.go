@@ -512,3 +512,40 @@ func TestDecisionNamesItsUser(t *testing.T) {
 		t.Error("a decision for a user the phone does not belong to acted")
 	}
 }
+
+// vince is re-pinned to another account while the adapter is stopped: it starts, without the saved chain that no
+// longer matches, and takes up the original pin again once restored.
+func TestRepinWhileStoppedStarts(t *testing.T) {
+	w := newWorld(t)
+	w.tick() // verifies and saves vince's chain
+	repin := func(account string) *adapter.Trust {
+		t.Helper()
+		if err := adapter.TrustRemoveUser(w.dir, "vince"); err != nil {
+			t.Fatal(err)
+		}
+		if err := adapter.TrustAddUser(w.dir, "vince", account); err != nil {
+			t.Fatal(err)
+		}
+		tr, err := adapter.LoadTrust(w.dir)
+		if err != nil {
+			t.Fatalf("adapter does not start after re-pinning: %v", err)
+		}
+		return tr
+	}
+	other := "0000-1111-2222-3333-4444-5555-6666-7777"
+	tr := repin(other)
+	if len(tr.Dropped) != 1 || !strings.Contains(tr.Dropped[0].Error(), "vince") {
+		t.Fatalf("dropped %v", tr.Dropped)
+	}
+	if _, heads := tr.Pins(); len(heads) != 0 || len(tr.Cards()) != 0 {
+		t.Fatalf("chain kept for a pin it does not match: %+v", heads)
+	}
+	if errs := tr.Refresh(w.ctx, w.adHub.Roster); len(errs) != 1 || len(tr.Cards()) != 0 {
+		t.Fatalf("hub's chain adopted for the wrong account: errs %v", errs)
+	}
+
+	tr = repin(w.account)
+	if len(tr.Dropped) != 0 || len(tr.Cards()) != 1 {
+		t.Fatalf("dropped %v, cards %v", tr.Dropped, tr.Cards())
+	}
+}

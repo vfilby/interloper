@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -33,9 +34,17 @@ type Source struct {
 	WG     Warpgate
 	Policy policy.Policy
 	Now    func() time.Time
+	Log    *slog.Logger // nil: slog.Default()
 
 	mu             sync.Mutex
 	users, targets map[string]string
+}
+
+func (s *Source) log() *slog.Logger {
+	if s.Log != nil {
+		return s.Log
+	}
+	return slog.Default()
 }
 
 func (s *Source) now() time.Time {
@@ -85,8 +94,10 @@ func (s *Source) Pending(ctx context.Context) ([]adapter.Item, error) {
 		it, v := s.item(r)
 		if v.Deny {
 			// The policy's verdict, as in phase 1 enforce mode: nobody is asked about a request it rejects.
+			// If the deny fails it stays pending at Warpgate, unapproved, and is tried again next poll; the rest still go
+			// out.
 			if err := s.WG.Deny(ctx, r.ID, "clearing house: "+v.Reason); err != nil && !errors.Is(err, wgapi.ErrNotPending) {
-				return nil, fmt.Errorf("denying %s by policy: %w", r.ID, err)
+				s.log().Warn("denying by policy failed; will retry", "request", r.ID, "err", err)
 			}
 			continue
 		}
