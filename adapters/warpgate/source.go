@@ -25,6 +25,10 @@ type Warpgate interface {
 	Deny(ctx context.Context, id, reason string) error
 }
 
+// MaxReason is how much of a requester's description reaches the record (and so the adapter's state, audit log and the
+// phone), in bytes.
+const MaxReason = 1024
+
 type Source struct {
 	WG     Warpgate
 	Policy policy.Policy
@@ -148,7 +152,7 @@ func (s *Source) item(r wgapi.TicketRequest) (adapter.Item, policy.Verdict) {
 			{Label: "Access", Value: tier, Level: level},
 			{Label: "Target", Value: req.Target},
 		},
-		Reason: r.Description,
+		Reason: protocol.CleanText(r.Description, MaxReason),
 	}
 	if d, ok := req.Duration(); ok {
 		it.Facts = append(it.Facts, protocol.Fact{Label: "Duration", Value: policy.Human(d)})

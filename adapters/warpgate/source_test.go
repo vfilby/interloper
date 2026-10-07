@@ -1,6 +1,7 @@
 package warpgate
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -53,5 +54,27 @@ func TestItemDuration(t *testing.T) {
 				t.Errorf("Duration %q, lease %+v; want 1h, %ds", shown, it.Lease, *c.secs)
 			}
 		})
+	}
+}
+
+// The description is the requester's own text: no control characters or line separators, and at most MaxReason bytes.
+func TestItemReasonCleaned(t *testing.T) {
+	now := time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)
+	s := &Source{
+		Policy:  policy.Policy{Requesters: map[string]bool{"claude": true}, MaxDuration: map[policy.Tier]time.Duration{policy.TierRW: 2 * time.Hour}},
+		Now:     func() time.Time { return now },
+		users:   map[string]string{"u1": "claude"},
+		targets: map[string]string{"t1": "db-01-rw"},
+	}
+	secs := int64(3600)
+	reason := func(desc string) string {
+		it, _ := s.item(wgapi.TicketRequest{ID: "r1", UserID: "u1", TargetID: "t1", RequestedDurationSeconds: &secs, Created: now, Description: desc})
+		return it.Reason
+	}
+	if got := reason("rotate\x1b[2J the\u0085 certs\nnow please"); got != "rotate[2J the certs now please" {
+		t.Errorf("reason %q", got)
+	}
+	if got := reason(strings.Repeat("x", 100_000)); len(got) != MaxReason {
+		t.Errorf("reason of %d bytes", len(got))
 	}
 }
