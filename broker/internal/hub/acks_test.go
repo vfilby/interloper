@@ -41,7 +41,7 @@ func TestAcksOnlyForRecipients(t *testing.T) {
 			boxes[d] = box(d)
 		}
 		r := Request{ID: id, Kind: "demo", CreatedAt: now.Unix(), ExpiresAt: now.Add(time.Hour).Unix(), Boxes: boxes}
-		if err := st.Publish(adapter, r, now); err != nil {
+		if _, err := st.Publish(adapter, r, now); err != nil {
 			t.Fatal(err)
 		}
 	}

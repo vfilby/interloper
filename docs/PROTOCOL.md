@@ -226,11 +226,11 @@ join is not approved yet (enroll `status` `pending`) gets 403 on every device ro
 
 | Route | Caller | Purpose |
 |---|---|---|
-| `POST /v1/adapter/requests` | adapter | `{id, kind, expires_at, boxes: {device_id: sealed}}`: publish a request |
+| `POST /v1/adapter/requests` | adapter | `{id, kind, expires_at, boxes: {device_id: sealed}}`: publish a request. The hub drops boxes for devices it does not serve (unknown or revoked), so only the devices left are woken, and refuses the request (400) if none is left. It caps `expires_at` at 24 hours from now. |
 | `GET /v1/adapter/decisions?wait=25` | adapter | long-poll: `[{request_id, device_id, decision: envelope}]` not yet taken |
 | `POST /v1/adapter/acks` | adapter | `{request_id, ack: envelope}`: resolves the request at the hub |
 | `GET /v1/adapter/rosters?user=<id>` | adapter | `{user, chain: [roster envelopes]}` |
-| `POST /v1/enroll` | new device (one-time code instead of a token) | `{code, card, genesis?}` → `{device_id, token, user, status}`. `genesis` (r1, containing this card) is required for a `new` code and refused for a `join` code. `status` is `active` (in the head roster) or `pending` (join not approved yet). |
+| `POST /v1/enroll` | new device (one-time code instead of a token) | `{code, card, genesis?}` → `{device_id, token, user, status}`. `genesis` (r1, containing this card) is required for a `new` code and refused for a `join` code. `status` is `active` (in the head roster) or `pending` (join not approved yet). A device revoked at the hub is refused until an admin removes it from the hub's list. |
 | `GET /v1/device/roster` | device (also pending) | `{user, chain}` for the device's user |
 | `POST /v1/device/roster` | device (current member) | `{roster: envelope}`: the next roster. The hub checks it extends the chain, appends it, and stops serving devices it removes |
 | `POST /v1/device/leave` | device (pending: plain leave only) | `{roster?, delete_account?}`: the device goes away and the hub deletes its record. `roster` is the next roster, without this device, signed by it: it takes itself off the account first. `delete_account` is only for the account's last device (its keys are going, so nothing could sign for the account again): the hub deletes the account. Neither: the roster is unchanged and the device may come back with a join code. |

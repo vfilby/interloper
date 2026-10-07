@@ -11,7 +11,9 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"slices"
@@ -95,7 +97,38 @@ func (a *Admin) Handler() http.Handler {
 	m.HandleFunc("GET /login", a.Auth.Login)
 	m.HandleFunc("GET /oidc/callback", a.Auth.Callback)
 	m.HandleFunc("POST /logout", a.Auth.Logout)
-	return sameOrigin(securityHeaders(a.Auth.Middleware(m, "/login", "/oidc/callback", "/app/hello")))
+	h := sameOrigin(securityHeaders(a.Auth.Middleware(m, "/login", "/oidc/callback", "/app/hello")))
+	if a.Auth.Local {
+		h = loopbackHostOnly(h)
+	}
+	return h
+}
+
+// loopbackHostOnly refuses requests whose Host is not a loopback name, against DNS rebinding: local mode has no
+// sign-in and no cookie, so a page whose name was made to resolve to 127.0.0.1 would otherwise be "same-origin" and
+// could drive every admin action. The hub refuses local mode unless the UI listens on loopback, so a genuine
+// request names localhost or a loopback address.
+func loopbackHostOnly(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !loopbackHost(r.Host) {
+			http.Error(w, "without sign-in, the management UI answers only to localhost or a loopback address", http.StatusForbidden)
+			return
+		}
+		h.ServeHTTP(w, r)
+	})
+}
+
+// loopbackHost reports whether a Host header (name or address, with or without a port) is loopback.
+func loopbackHost(host string) bool {
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	host = strings.TrimSuffix(strings.TrimPrefix(host, "["), "]")
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip, err := netip.ParseAddr(host)
+	return err == nil && ip.IsLoopback()
 }
 
 // admin restricts a handler to admins (the admin group, or everyone in local mode).
@@ -283,7 +316,8 @@ func (a *Admin) appHello(w http.ResponseWriter, _ *http.Request) {
 //
 // It is a GET with an effect (a code is issued) so that it works as a sign-in redirect target. A forged visit
 // can only hand a code for the victim's own account to the victim's own app, and that code adds nothing until the
-// victim approves the device on a phone they already have.
+// victim approves the device on a phone they already have. Open codes are capped per user (MaxOpenCodesPerUser), so
+// forged visits can hold up only the victim's own enrollment, for at most EnrollCodeTTL.
 func (a *Admin) appEnroll(w http.ResponseWriter, r *http.Request) {
 	user := Who(r).User
 	if a.Auth.Local {
@@ -382,8 +416,9 @@ func (a *Admin) revoke(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "you may only revoke your own devices", http.StatusForbidden)
 		return
 	}
-	flash := "Revoked " + id + " at the hub: it gets nothing more from here. Adapters go by the user's roster: to take it off the " +
-		"account for good, remove it on another of the user's phones (Device tab → Devices on this account)."
+	flash := "Revoked " + id + " at the hub: its hub token no longer works, and it cannot enroll here again until an admin " +
+		"removes it from the list. It is still on the user's roster, which is what adapters go by: to take it off the " +
+		"account, remove it on another of the user's phones (Device tab → Devices on this account)."
 	if err := a.Store.RevokeDevice(id); err != nil {
 		flash = err.Error()
 	} else {

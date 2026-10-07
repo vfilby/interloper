@@ -121,7 +121,7 @@ func (a *API) publish(w http.ResponseWriter, r *http.Request, ad *Adapter) {
 	if in.CreatedAt == 0 {
 		in.CreatedAt = now.Unix()
 	}
-	err := a.Store.Publish(ad.ID, Request{ID: in.ID, Kind: in.Kind, CreatedAt: in.CreatedAt, ExpiresAt: in.ExpiresAt, Boxes: in.Boxes}, now)
+	stored, err := a.Store.Publish(ad.ID, Request{ID: in.ID, Kind: in.Kind, CreatedAt: in.CreatedAt, ExpiresAt: in.ExpiresAt, Boxes: in.Boxes}, now)
 	switch {
 	case errors.Is(err, ErrConflict):
 		w.WriteHeader(http.StatusOK) // idempotent: the adapter retries after a lost response
@@ -134,15 +134,11 @@ func (a *API) publish(w http.ResponseWriter, r *http.Request, ad *Adapter) {
 		return
 	}
 	a.audit(audit.Event{Time: now, Event: "published", Adapter: ad.ID, RequestID: in.ID, Detail: in.Kind})
-	ids := make([]string, 0, len(in.Boxes))
-	for id := range in.Boxes {
-		ids = append(ids, id)
-	}
 	exp := time.Time{}
-	if in.ExpiresAt > 0 {
-		exp = time.Unix(in.ExpiresAt, 0)
+	if stored.ExpiresAt > 0 {
+		exp = time.Unix(stored.ExpiresAt, 0)
 	}
-	a.wake(ids, apns.Notification{Title: "Approval request", Body: "Open Interpose to review it.", Expiration: exp,
+	a.wake(stored.Recipients, apns.Notification{Title: "Approval request", Body: "Open Interpose to review it.", Expiration: exp,
 		ThreadID: "requests"})
 	w.WriteHeader(http.StatusCreated)
 }

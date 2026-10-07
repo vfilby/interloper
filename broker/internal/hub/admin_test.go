@@ -2,6 +2,7 @@ package hub
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -39,8 +40,8 @@ func TestAdminCSRF(t *testing.T) {
 		{"old browser, foreign Origin", map[string]string{"Origin": "https://evil.example"}, http.StatusForbidden},
 		{"old browser, Origin null", map[string]string{"Origin": "null"}, http.StatusForbidden},
 	}
-	for _, c := range cases {
-		req := newUserForm("vince")
+	for i, c := range cases {
+		req := newUserForm(fmt.Sprintf("user%d", i)) // a user each: open codes are capped per user
 		for k, v := range c.headers {
 			req.Header.Set(k, v)
 		}

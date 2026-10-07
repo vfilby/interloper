@@ -39,6 +39,16 @@ const (
 	MaxRosters       = 200      // per user, genesis included
 )
 
+const (
+	// Open enrollment codes: per user, so forged visits to /app/enroll hold up only that user's enrollment, not
+	// everyone's; and in all, to bound the state file.
+	MaxOpenCodesPerUser = 5
+	MaxOpenCodes        = 200
+	// A request is offered to devices until its expires_at, which the hub caps: a far-future one would stay pending
+	// forever and count towards MaxPendingPerAdapter.
+	MaxRequestTTL = 24 * time.Hour
+)
+
 var (
 	ErrUnknown  = errors.New("not found")
 	ErrTooMany  = errors.New("too many pending requests for this adapter")
@@ -426,18 +436,24 @@ func (st *Store) NewEnrollCode(now time.Time, user, mode string) (code, id strin
 	}
 	code, h := NewSecret()
 	keep := st.s.Codes[:0]
-	open := 0
+	open, mine := 0, 0
 	for _, c := range st.s.Codes {
 		// Spent codes are kept a while after expiry so the enroll page can still say who used them.
 		if now.Before(c.Expires.Add(time.Hour)) {
 			keep = append(keep, c)
 			if c.Device == "" && now.Before(c.Expires) {
 				open++
+				if c.User == user {
+					mine++
+				}
 			}
 		}
 	}
 	st.s.Codes = keep
-	if open >= 10 {
+	if mine >= MaxOpenCodesPerUser {
+		return "", "", fmt.Errorf("user %s has %d open enrollment codes; use one or wait for them to expire", user, mine)
+	}
+	if open >= MaxOpenCodes {
 		return "", "", errors.New("too many open enrollment codes; wait for them to expire")
 	}
 	st.s.Codes = append(st.s.Codes, enrollCode{Hash: h, Expires: now.Add(EnrollCodeTTL), User: user, Mode: mode})
@@ -473,7 +489,9 @@ type Enrolled struct {
 
 // Enroll spends a code and registers the device. A `new` code needs the user's genesis roster, containing this card
 // and signed by it; a `join` code must come without one. A device already in the user's head (it left this hub, or
-// the hub was reset) is simply active again: the code is admin-issued and the card is signed by the same key.
+// the hub was reset) is simply active again: the code is admin-issued and the card is signed by the same key. A
+// device revoked at the hub is refused until an admin removes it (RemoveRevokedDevices): otherwise a join code,
+// which users issue themselves, would undo the revocation.
 func (st *Store) Enroll(code string, card protocol.Envelope, genesis *protocol.Envelope, now time.Time) (Enrolled, error) {
 	c, err := protocol.VerifyCard(card)
 	if err != nil {
@@ -496,6 +514,9 @@ func (st *Store) Enroll(code string, card protocol.Envelope, genesis *protocol.E
 	ec := st.s.Codes[idx]
 	if d, ok := st.s.Devices[c.DeviceID]; ok && d.User != "" && d.User != ec.User {
 		return Enrolled{}, fmt.Errorf("this device belongs to user %s", d.User)
+	}
+	if d, ok := st.s.Devices[c.DeviceID]; ok && d.Revoked {
+		return Enrolled{}, errors.New("this device was revoked at the hub: an admin must remove it from the hub's list before it can enroll again")
 	}
 
 	out := Enrolled{Card: c, User: ec.User}
@@ -809,25 +830,38 @@ func (st *Store) Device(id string) (Device, bool) {
 
 func rkey(adapter, id string) string { return adapter + "/" + id }
 
-// Publish stores a request an adapter sealed for its devices.
-func (st *Store) Publish(adapter string, r Request, now time.Time) error {
+// Publish stores a request an adapter sealed for its devices. Boxes for devices the hub does not serve (unknown or
+// revoked) are dropped, so an adapter cannot have the hub wake every phone on it; and expires_at is capped at
+// MaxRequestTTL from now. It returns the request as stored, without its boxes: Recipients are the devices to wake.
+func (st *Store) Publish(adapter string, r Request, now time.Time) (Request, error) {
 	if r.ID == "" || len(r.ID) > 128 || len(r.Boxes) == 0 {
-		return errors.New("request needs an id (≤128 chars) and at least one box")
+		return Request{}, errors.New("request needs an id (≤128 chars) and at least one box")
 	}
 	size := 0
 	for _, b := range r.Boxes {
 		size += len(b.CT) + len(b.Enc)
 	}
 	if size > MaxBoxBytes {
-		return errors.New("boxes too large")
+		return Request{}, errors.New("boxes too large")
 	}
+	r.ExpiresAt = min(r.ExpiresAt, now.Add(MaxRequestTTL).Unix())
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	st.gc(now)
 	k := rkey(adapter, r.ID)
 	if _, ok := st.s.Requests[k]; ok {
-		return ErrConflict
+		return Request{}, ErrConflict
 	}
+	boxes := make(map[string]protocol.Sealed, len(r.Boxes))
+	for id, b := range r.Boxes {
+		if d, ok := st.s.Devices[id]; ok && !d.Revoked {
+			boxes[id] = b
+		}
+	}
+	if len(boxes) == 0 {
+		return Request{}, errors.New("no box for a device enrolled at this hub")
+	}
+	r.Boxes = boxes
 	n := 0
 	for _, x := range st.s.Requests {
 		if x.Adapter == adapter && x.Ack == nil {
@@ -835,7 +869,7 @@ func (st *Store) Publish(adapter string, r Request, now time.Time) error {
 		}
 	}
 	if n >= MaxPendingPerAdapter {
-		return ErrTooMany
+		return Request{}, ErrTooMany
 	}
 	r.Adapter, r.Ack, r.ResolvedAt, r.Decisions = adapter, nil, time.Time{}, 0
 	r.Recipients = make([]string, 0, len(r.Boxes))
@@ -844,7 +878,9 @@ func (st *Store) Publish(adapter string, r Request, now time.Time) error {
 	}
 	sort.Strings(r.Recipients)
 	st.s.Requests[k] = &r
-	return st.commit()
+	out := r
+	out.Boxes = nil
+	return out, st.commit()
 }
 
 // ForDevice lists unresolved, unexpired requests that carry a box for the device.

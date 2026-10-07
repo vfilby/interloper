@@ -246,7 +246,7 @@ func TestAdminAuditPageShowsTheTail(t *testing.T) {
 	}
 	h := (&Admin{Store: st, AuditPath: path, HubURL: "http://hub.test:8740"}).Handler()
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest("GET", "/audit", nil))
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "http://127.0.0.1:8741/audit", nil))
 	body := rec.Body.String()
 	if rec.Code != http.StatusOK || !strings.Contains(body, "event-4999\nevent-4998") || !strings.Contains(body, "event-4800\n") ||
 		strings.Contains(body, "event-4799\n") {
