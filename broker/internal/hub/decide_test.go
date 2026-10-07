@@ -29,7 +29,7 @@ func publishFor(t *testing.T, acc account, adapter, id string) {
 	box := protocol.Sealed{Suite: protocol.SuiteHPKE, Enc: "e", CT: "c"}
 	r := Request{ID: id, Kind: "k", ExpiresAt: acc.now.Unix() + 600,
 		Boxes: map[string]protocol.Sealed{acc.a.ID(): box, acc.b.ID(): box}}
-	if err := acc.st.Publish(adapter, r, acc.now); err != nil {
+	if _, err := acc.st.Publish(adapter, r, acc.now); err != nil {
 		t.Fatal(err)
 	}
 }

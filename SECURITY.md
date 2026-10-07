@@ -35,7 +35,7 @@ What enforces that:
 - **Fail closed**: unanswered requests are denied at the service; decisions that do not verify do nothing; an
   unreadable trust list stops the adapter publishing.
 - **Hub management UI**: OIDC sign-in, server-rendered with no JavaScript (CSP `default-src 'none'`), cross-site POSTs
-  refused; without OIDC configured it listens on loopback only.
+  refused; without OIDC configured it listens on loopback only and answers only to a loopback Host (DNS rebinding).
 - **Push notifications** carry fixed text ("Approval request"), never request content.
 - **Containers**: distroless, non-root, read-only root filesystem, no capabilities, memory and PID limits. Adapters
   only connect out.
@@ -52,6 +52,12 @@ What enforces that:
   account, then enrolling it again and re-pinning it at each adapter.
 - No account recovery key yet: an account whose every phone is lost must be enrolled again and re-trusted at each
   adapter.
+- Hub, accepted for now (security audit of 2026-10-04): a device may register any APNs token, so it can have
+  another phone woken with the hub's fixed texts; management UI sessions are signed cookies with no server-side
+  revocation, so signing out clears only the browser's copy and a stolen cookie works until it expires (12 hours by default);
+  the state file is replaced (write, then rename) without fsync, so a power cut can lose the last changes; and the hub
+  forgets decisions once an adapter has fetched them, so a lost response loses them. Each of these fails closed: a
+  request nobody decides is denied.
 - `interpose-device` (the software phone) keeps its keys in a file. It exists for tests; never trust it on a real
   adapter.
 
