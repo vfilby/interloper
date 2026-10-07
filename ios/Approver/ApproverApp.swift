@@ -68,15 +68,16 @@ struct RootView: View {
             }
         }
         .pinPrompt()
+        .privacyCover()
         .sheet(item: $model.sheet, onDismiss: {
             // Cancelled a hub switch: drop the link it came with. (A finished one has already cleared it.)
             if model.sheet == nil { model.pendingLink = nil }
         }) { sheet in
             switch sheet {
             case .switchHub:
-                NavigationStack { EnrollView(switching: true) }.pinPrompt().environmentObject(model)
+                NavigationStack { EnrollView(switching: true) }.pinPrompt().privacyCover().environmentObject(model)
             case .summary(let s):
-                EnrollmentSummaryView(summary: s).environmentObject(model)
+                EnrollmentSummaryView(summary: s).privacyCover().environmentObject(model)
             }
         }
     }
@@ -105,8 +106,40 @@ struct PINPromptModifier: ViewModifier {
     }
 }
 
+/// Covers the screen while the scene is not active, so the app switcher's snapshot (and anyone glancing at it) does not
+/// show an open request, fingerprints or the device list. Not while the approve key's own Face ID prompt makes the
+/// scene inactive: the person is looking at what they approve. On the root and on each sheet (a sheet sits above the
+/// root's cover).
+struct PrivacyCover: ViewModifier {
+    @EnvironmentObject var model: AppModel
+    @Environment(\.scenePhase) private var scenePhase
+
+    private var covered: Bool {
+        switch scenePhase {
+        case .active: return false
+        case .inactive: return model.signing == 0
+        default: return true
+        }
+    }
+
+    func body(content: Content) -> some View {
+        content.overlay {
+            if covered {
+                ZStack {
+                    Color(uiColor: .systemBackground)
+                    Label("Interpose", systemImage: "lock.fill").font(.title2.weight(.semibold)).foregroundStyle(.secondary)
+                }
+                .ignoresSafeArea()
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("privacy-cover")
+            }
+        }
+    }
+}
+
 extension View {
     func pinPrompt() -> some View { modifier(PINPromptModifier()) }
+    func privacyCover() -> some View { modifier(PrivacyCover()) }
 }
 
 /// Shown on top of every screen when the keys are software keys (the simulator).

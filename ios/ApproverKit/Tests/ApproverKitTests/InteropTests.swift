@@ -183,7 +183,7 @@ final class InteropTests: XCTestCase {
             edit(&c)
             let p = try Coders.encoder.encode(c)
             return Envelope(alg: Envelope.es256, kid: pk.deviceID, payload: B64.encode(p),
-                            sig: B64.encode(try dev.keys.signApprove(p, pin: nil)))
+                            sig: B64.encode(try dev.keys.signApprove(p, pin: nil, reason: SigningReason.card())))
         }
         XCTAssertNoThrow(try verifyCard(try signedCard { _ in }))
         XCTAssertThrowsError(try verifyCard(try signedCard { $0.name = "phone\u{202E}" }))

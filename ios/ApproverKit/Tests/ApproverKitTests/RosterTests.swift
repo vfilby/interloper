@@ -138,20 +138,20 @@ final class RosterTests: XCTestCase {
 
         var wrongPrev = nextRoster(after: h1, members: h1.cards)
         wrongPrev.prev = B64.encode(Data("nope".utf8))
-        expectFail("wrong prev", [r1, try a.sign(wrongPrev)], "does not follow")
+        expectFail("wrong prev", [r1, try a.sign(wrongPrev, reason: "test")], "does not follow")
 
-        expectFail("device twice", [r1, try a.sign(nextRoster(after: h1, members: h1.cards + h1.cards))], "twice")
+        expectFail("device twice", [r1, try a.sign(nextRoster(after: h1, members: h1.cards + h1.cards), reason: "test")], "twice")
 
         var unknown = nextRoster(after: h1, members: h1.cards)
         unknown.members[0].kind = "recovery"
-        expectFail("unknown kind", [r1, try a.sign(unknown)], "unknown member kind")
+        expectFail("unknown kind", [r1, try a.sign(unknown, reason: "test")], "unknown member kind")
 
         // A member card whose encryption key was swapped (requests redirected): the card no longer verifies.
         var tampered = nextRoster(after: h1, members: h1.cards + [cardB])
         var cc = try Coders.decoder.decode(DeviceCard.self, from: B64.decode(cardB.payload))
         cc.encKey = B64.encode(P256.KeyAgreement.PrivateKey().publicKey.x963Representation)
         tampered.members[1].card.payload = B64.encode(try Coders.encoder.encode(cc))
-        expectFail("tampered card", [r1, try a.sign(tampered)], "card")
+        expectFail("tampered card", [r1, try a.sign(tampered, reason: "test")], "card")
     }
 
     /// The hub reads `delete_account` and `roster`, and treats a missing field as "no".

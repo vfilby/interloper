@@ -41,7 +41,7 @@ struct EnrollView: View {
 
             if switching {
                 Section {
-                    LabeledContent("Connected to", value: model.hubURL?.host() ?? "—")
+                    LabeledContent("Connected to") { Text(model.hubURL?.absoluteString ?? "—").font(.footnote.monospaced()) }
                 } footer: {
                     Text("Connecting here replaces the current server once the new one accepts this device. The device keys are kept, so adapters that trust your account keep trusting this device.")
                 }
@@ -59,7 +59,7 @@ struct EnrollView: View {
             }
 
             if let e = stepError ?? model.lastError {
-                Section { Text(e).foregroundStyle(.red).font(.footnote) }
+                Section { Text(sanitize(e)).foregroundStyle(.red).font(.footnote) }
             }
         }
         .navigationTitle(switching ? "Connect to a server" : "Connect to Interpose")
@@ -112,6 +112,7 @@ struct EnrollView: View {
         stepError = nil
         defer { busy = false }
         do {
+            try HubTransport.check(base, allowLoopbackHTTP: AppModel.allowLoopbackHTTP)
             server = (base, try await SignIn.hello(base))
         } catch {
             stepError = error.localizedDescription
@@ -123,7 +124,7 @@ struct EnrollView: View {
     @ViewBuilder
     private func signInStep(_ base: URL, _ info: ServerInfo) -> some View {
         Section {
-            LabeledContent("Server", value: base.host() ?? base.absoluteString)
+            ServerRow(url: base)
             Button("Change server") { server = nil; stepError = nil }
         }
         Section {
@@ -161,6 +162,13 @@ struct EnrollView: View {
                                                       callbackURLScheme: "interpose", preferredBrowserSession: .ephemeral)
             guard let l = EnrollmentLink(back.absoluteString) else {
                 stepError = "The server answered with something that is not an enrollment link."
+                return
+            }
+            // The interpose:// scheme is not this app's alone: accept only a link for the server the person typed (or
+            // the device API it named at /app/hello), never one that sends this device to some other hub.
+            let api = URL(string: info.api)
+            guard HubTransport.sameHost(l.hub, base) || api.map({ HubTransport.sameHost(l.hub, $0) }) == true else {
+                stepError = "The link that came back is for \(l.hub.host() ?? "another server"), not \(base.host() ?? "the server you entered"): not used."
                 return
             }
             model.pendingLink = l
@@ -205,7 +213,7 @@ struct EnrollView: View {
     private var connectStep: some View {
         if let l = link {
             Section {
-                LabeledContent("Server", value: l.hub.host() ?? l.hub.absoluteString)
+                ServerRow(url: l.hub)
                 LabeledContent("Account", value: l.user)
                 LabeledContent("Joins as", value: l.mode == .new ? "first device of a new account" : "another device (needs approval)")
                 if model.pendingLink != nil {
@@ -242,7 +250,7 @@ struct EnrollView: View {
                         if busy { Spacer(); ProgressView() }
                     }
                 }
-                .disabled(busy || name.isEmpty || (needsPIN && AppPIN.problem(pin) != nil))
+                .disabled(busy || name.isEmpty || (needsPIN && AppPIN.problem(pin) != nil) || refused(l.hub) != nil)
             } footer: {
                 if l.mode == .join {
                     Text("Signs this device's card (Face ID) and asks to join the account. It can approve nothing until a device already on the account approves it there; compare this device's fingerprint on both screens.")
@@ -255,6 +263,31 @@ struct EnrollView: View {
 
     private func linkError(_ s: String) -> String? {
         do { _ = try EnrollmentLink(parsing: s); return nil } catch { return error.localizedDescription }
+    }
+
+    private func refused(_ hub: URL) -> String? {
+        do { try HubTransport.check(hub, allowLoopbackHTTP: AppModel.allowLoopbackHTTP); return nil } catch { return error.localizedDescription }
+    }
+}
+
+/// The server as the app will talk to it: scheme, host and port, never just the host. Plain http is called out (and
+/// refused, unless it is loopback in a debug build).
+struct ServerRow: View {
+    let url: URL
+
+    var body: some View {
+        LabeledContent("Server") { Text(sanitize(url.absoluteString)).font(.footnote.monospaced()).textSelection(.enabled) }
+        if HubTransport.isCleartext(url) {
+            if (try? HubTransport.check(url, allowLoopbackHTTP: AppModel.allowLoopbackHTTP)) == nil {
+                Label("Plain http: the enrollment code, this device's token and adapter keys would cross the network unencrypted. Refused: use the server's https address.",
+                      systemImage: "exclamationmark.triangle.fill")
+                    .font(.footnote).foregroundStyle(.red)
+            } else {
+                Label("Plain http, not encrypted: allowed only because this is a debug build talking to this machine.",
+                      systemImage: "lock.open")
+                    .font(.footnote).foregroundStyle(.orange)
+            }
+        }
     }
 }
 

@@ -16,7 +16,8 @@ public struct HubClient: Sendable {
     public enum HubError: Error, LocalizedError {
         case http(Int, String)
         public var errorDescription: String? {
-            switch self { case .http(let c, let b): return "Hub answered HTTP \(c): \(b)" }
+            // The body is the hub's to choose: shown sanitized, on one line.
+            switch self { case .http(let c, let b): return "Hub answered HTTP \(c): \(sanitize(b))" }
         }
     }
 
@@ -75,8 +76,8 @@ public struct HubClient: Sendable {
             req.httpBody = body
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
-        let (data, resp) = try await session.data(for: req)
-        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        let (data, code) = try await HubTransport.fetch(req, session: session)
+        if (300..<400).contains(code) { throw HubError.http(code, "a redirect, not followed") }
         guard (200..<300).contains(code) else {
             throw HubError.http(code, String(decoding: data.prefix(300), as: UTF8.self))
         }

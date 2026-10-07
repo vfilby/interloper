@@ -44,10 +44,11 @@ public enum ProtocolError: Error, LocalizedError, Equatable {
 
     public var errorDescription: String? {
         switch self {
-        case .malformed(let s): return "Malformed: \(s)"
-        case .badSignature(let s): return "Bad signature: \(s)"
-        case .mismatch(let s): return "Mismatch: \(s)"
-        case .untrusted(let s): return "Untrusted: \(s)"
+        // The details often quote what the hub or an adapter sent: sanitized wherever they are shown.
+        case .malformed(let s): return "Malformed: \(sanitize(s))"
+        case .badSignature(let s): return "Bad signature: \(sanitize(s))"
+        case .mismatch(let s): return "Mismatch: \(sanitize(s))"
+        case .untrusted(let s): return "Untrusted: \(sanitize(s))"
         }
     }
 }

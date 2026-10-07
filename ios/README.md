@@ -40,12 +40,19 @@ The app opens on **Connect to Interpose**. There are three steps:
 3. **Connect this device:** name it, set the app PIN on a device with a Secure Enclave, and connect. The summary
    shows the device and account fingerprints.
 
-The other way in is **I have an enrollment link or QR code**, using a code from the management page. Scanning its QR
-code with the Camera app opens the app straight at step 3.
+The other way in is **I have an enrollment link or QR code**, using a code from the management page. Scan its QR code
+with the in-app scanner, or with the Camera app, which opens the app straight at step 3.
+
+Each step shows the server's full address (scheme, host and port), not just the host. The link the server sends back
+in step 2 is used only if its hub has the same host as the server typed in step 1 (or as the device API that server
+named at `/app/hello`): the `interpose://` scheme can be claimed by any app. Universal links would close that fully
+once the hub has a public hostname (not done).
 
 In the simulator against a local hub (no OIDC):
 - The hub says it has no sign-in, so step 2 asks for a user id instead.
-- Use `http://127.0.0.1:8741` as the server (the simulator shares the Mac's loopback).
+- Use `http://127.0.0.1:8741` as the server (the simulator shares the Mac's loopback). Plain http is accepted only
+  in Debug builds and only to loopback (`localhost`, `127.0.0.0/8`, `::1`); the app shows the full address and marks
+  it as unencrypted. Every other hub, and every hub in a Release build, must be https (`HubTransport`).
 - Or run the `xcrun simctl openurl booted '…'` command the management page shows, then click Open.
 
 Then tell each adapter to trust the account (`interpose-adapter trust add-user vince <account fingerprint>`), and
@@ -81,13 +88,17 @@ account, not single devices.
   - *It is different* remembers that fingerprint as rejected: the device never pins it. Leave the hub.
 
 The simulator always uses **software keys** (orange INSECURE banner): it reports a Secure Enclave, but its Face ID
-and app-password access control are not the real thing. A device uses the Secure Enclave:
+and app-password access control are not the real thing. A device uses the Secure Enclave; a device without one refuses
+to enroll rather than fall back to software keys, which adapters could not tell apart:
 
 | Key | Access control |
 |---|---|
 | approve | `.privateKeyUsage` + `.applicationPassword`, `WhenPasscodeSetThisDeviceOnly`. The password is 32 random bytes: Face ID reads a copy (`.biometryCurrentSet` keychain item), the app PIN unwraps another (PBKDF2-HMAC-SHA256, 600,000 iterations) |
 | deny | `.privateKeyUsage`, `WhenUnlockedThisDeviceOnly` |
 | encryption | `.privateKeyUsage`, `AfterFirstUnlockThisDeviceOnly` |
+
+Each Face ID prompt says what the signature is for: connecting this device (its card), creating the account, adding
+or removing a named device, or approving a request by its title.
 
 The app PIN (8+ characters, letters allowed) is asked for when Face ID fails or is cancelled. Wrong PINs are counted:
 after 3, each locks the PIN for longer (1 min, 4 min, 16 min, …), and the 10th in a row deletes the keys. Adding a
@@ -119,6 +130,9 @@ fingerprint under "New adapters", and its requests wait until you compare that w
    It checks that the app shows no account fingerprint as the account's until the person taps *It matches*, then pins
    it.
 
+`testPrivacyCoverWhenNotActive` needs no hub: it pulls Notification Center over the app and checks the screen is
+covered.
+
 The script checks the demo service's outcome afterwards. `scripts/e2e-cli.sh` is the same flow with the Go software
 device instead of the app.
 
@@ -146,6 +160,11 @@ Enroll with another hub. A new code from the same hub re-enrolls the same keys.
   coloured by level, lease, expiry. The requester's reason comes after them, quoted and labelled as their claim.
   All requester and adapter text is sanitized: control and format (bidi, zero-width) characters are removed and it
   is shown on one line.
+- Text from the hub (error bodies, adapter and device ids in status and error rows) is sanitized the same way.
+- Hub responses: redirects are not followed (they would carry the bearer token to another host) and answers over
+  4 MiB are not read.
+- The screen is covered while the app is not active, so the app-switcher snapshot shows no request. Not during the
+  approve key's own Face ID prompt.
 - `risk: high` needs a press-and-hold before the approve signature (and its Face ID prompt).
 - Acks:
   - `approved`, `denied` and `expired` are final.
@@ -160,7 +179,6 @@ Enroll with another hub. A new code from the same hub re-enrolls the same keys.
   notifications, with a lock-screen Deny action (signed with the deny key).
 - **App Attest** assertion at enrollment.
 - **Off-network transport.** Only the direct path is implemented: the hub's HTTP API on LAN/VPN.
-- An in-app **QR scanner**. The Camera app opening the `interpose://` link covers enrollment for now.
 - **Untested on hardware:** Secure Enclave key creation with `.applicationPassword`, the random password with Face ID
   and the PIN path, the PIN prompt, lockout and wipe on a real key, and turning Face ID back on after a biometric
   change. The simulator only exercises software keys; `swift test` covers the PIN wrap and the attempt counter.

@@ -41,6 +41,14 @@ final class AppModel: ObservableObject {
     let keys: KeyStore = defaultKeyStore()
     var device: Device { Device(keys: keys) }
 
+    /// Plain http to a hub only in debug builds, and only to loopback (the simulator and a hub on the Mac). Everything
+    /// else is https (HubTransport).
+    #if DEBUG
+    static let allowLoopbackHTTP = true
+    #else
+    static let allowLoopbackHTTP = false
+    #endif
+
     @Published private(set) var hubURL: URL?
     @Published private(set) var token: String?
     @Published private(set) var adapters: [PinnedAdapter] = []
@@ -131,8 +139,17 @@ final class AppModel: ObservableObject {
     /// The last head accepted (seq + payload hash), persisted: refuses rollbacks and forks across restarts.
     private func knownHead() throws -> KnownHead? { try pinStore.load(.knownHead) }
 
-    private var client: HubClient? {
+    /// Why the app will not talk to the stored hub (plain http where it is refused, e.g. kept from an older version).
+    var hubRefusal: String? {
         guard let hubURL else { return nil }
+        do { try HubTransport.check(hubURL, allowLoopbackHTTP: Self.allowLoopbackHTTP); return nil } catch {
+            return error.localizedDescription + " Connect again: Device → Connect to another server."
+        }
+    }
+
+    /// No client for a hub the transport policy refuses: the token is never sent there.
+    private var client: HubClient? {
+        guard let hubURL, hubRefusal == nil else { return nil }
         return HubClient(base: hubURL, token: token)
     }
 
@@ -182,6 +199,10 @@ final class AppModel: ObservableObject {
             let keys = self.keys
             let user = link.user
             let mode = link.mode
+            // Before any key is made or signs: software keys on a phone would look protected to adapters, and over
+            // plain http the code and the token are readable on the way.
+            guard keys.canEnroll else { throw NoSecureEnclave() }
+            try HubTransport.check(link.hub, allowLoopbackHTTP: Self.allowLoopbackHTTP)
             if !keys.hasKeys() { try await Task.detached { try keys.generate(pin: pin) }.value }
             // Signing uses the approve key: Face ID / PIN on a device (for a new user twice: card, then r1).
             let (card, genesis): (Envelope, Envelope?) = try await withApproveKey(pin: pin) { pin in
@@ -365,6 +386,10 @@ final class AppModel: ObservableObject {
     // MARK: inbox
 
     func refresh() async {
+        if isEnrolled, let r = hubRefusal {
+            lastError = r
+            return
+        }
         guard isEnrolled, let client else { return }
         let wasMember = membership == .member
         await refreshRoster()
@@ -480,6 +505,9 @@ final class AppModel: ObservableObject {
     }
 
     @Published var pinPrompt: PINPrompt?
+    /// An approve-key signature is in progress: its Face ID prompt makes the scene inactive, and the privacy cover
+    /// (PrivacyCover) must not hide what the person is approving behind it.
+    @Published private(set) var signing = 0
 
     private func askPIN(_ message: String?) async -> String? {
         pinPrompt?.finish(nil)
@@ -492,6 +520,8 @@ final class AppModel: ObservableObject {
     /// key's password is a random secret the PIN only unwraps (KeyStore.swift).
     func withApproveKey<T: Sendable>(pin: String? = nil, _ op: @escaping @Sendable (String?) throws -> T) async throws -> T {
         var pin = pin
+        signing += 1
+        defer { signing -= 1 }
         while true {
             let message: String?
             do {

@@ -28,7 +28,7 @@ public struct Device: Sendable {
                               createdAt: Int64(now.timeIntervalSince1970))
         let payload = try Coders.encoder.encode(card)
         return Envelope(alg: Envelope.es256, kid: pk.deviceID, payload: B64.encode(payload),
-                        sig: B64.encode(try keys.signApprove(payload, pin: pin)))
+                        sig: B64.encode(try keys.signApprove(payload, pin: pin, reason: SigningReason.card())))
     }
 
     // MARK: records
@@ -69,7 +69,8 @@ public struct Device: Sendable {
                          decision: approve ? Decision.approve : Decision.deny, recordHash: B64.encode(sha256(req.payload)),
                          nonce: req.record.nonce, deviceId: id, ts: Int64(now.timeIntervalSince1970))
         let payload = try Coders.encoder.encode(d)
-        let sig = approve ? try keys.signApprove(payload, pin: pin) : try keys.signDeny(payload)
+        let sig = approve ? try keys.signApprove(payload, pin: pin, reason: SigningReason.approve(title: req.record.title))
+            : try keys.signDeny(payload)
         return Envelope(alg: Envelope.es256, kid: id, payload: B64.encode(payload), sig: B64.encode(sig))
     }
 
@@ -94,11 +95,11 @@ public struct Device: Sendable {
     }
 
     private func verifyEd25519(_ env: Envelope, pinned: [String: Data]) throws -> Data {
-        guard let raw = pinned[env.kid] else { throw ProtocolError.untrusted("adapter \(env.kid) is not pinned") }
+        guard let raw = pinned[env.kid] else { throw ProtocolError.untrusted("adapter \(sanitize(env.kid)) is not pinned") }
         let key = try Curve25519.Signing.PublicKey(rawRepresentation: raw)
         let payload = try B64.decode(env.payload)
         guard key.isValidSignature(try B64.decode(env.sig), for: payload) else {
-            throw ProtocolError.badSignature("adapter \(env.kid)")
+            throw ProtocolError.badSignature("adapter \(sanitize(env.kid))")
         }
         return payload
     }
@@ -178,7 +179,7 @@ public func cleanDeviceName(_ s: String) -> String {
     return out
 }
 
-/// Makes requester-written text safe to show: no control or format characters (bidi overrides, zero-width), one line.
+/// Makes requester-, adapter- or hub-written text safe to show: no control or format characters (bidi overrides, zero-width), one line.
 public func sanitize(_ s: String) -> String {
     var out = String.UnicodeScalarView()
     for u in s.unicodeScalars {
