@@ -90,3 +90,12 @@ The hub comes first: [docs/runbooks/deploy-clearing-house.md](../../docs/runbook
    approve, and the message is released and tagged `approved-sent`.
 
 Updating: steps 1–3 again; finished steps are skipped.
+
+### A second Mailpit on the same host
+
+One adapter guards one Mailpit. For another instance, run the same install with an instance name:
+`sudo ./install.sh --instance NAME <sha256>`. It lives in `/opt/interpose-adapter-mailpit-NAME`, a compose project of
+its own, with its own `.env` (`ADAPTER_ID` defaults to `mail-NAME`), Mailpit login, signing key, hub registration and
+trust list. Point `MAILPIT_URL` at that instance's API (a `.env` next to install.sh is used for the first install), add
+the adapter's line to **that** instance's `ui-users`, and give it a gate that tags `held`; without one the adapter has
+nothing to ask about. Update it with the same `--instance NAME`.
