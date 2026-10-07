@@ -177,11 +177,7 @@ func (a *API) ack(w http.ResponseWriter, r *http.Request, ad *Adapter) {
 	// The hub can check this one: the adapter's key is registered here. It keeps a broken adapter from resolving
 	// requests with garbage; it is not what the app relies on (the app verifies against its own pinned key).
 	key, _ := protocol.UnB64(ad.Key)
-	p, err := protocol.VerifyEd25519(in.Ack, key)
-	var ack protocol.Ack
-	if err == nil {
-		err = json.Unmarshal(p, &ack)
-	}
+	ack, err := protocol.VerifyAck(in.Ack, key)
 	if err != nil || ack.RequestID != in.RequestID || ack.Adapter != ad.ID {
 		httpErr(w, http.StatusBadRequest, "ack does not verify for this adapter and request")
 		return

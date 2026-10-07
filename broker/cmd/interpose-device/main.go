@@ -57,7 +57,7 @@ func run(cmd, file, name string, args []string) error {
 		if _, err := os.Stat(file); err == nil {
 			return fmt.Errorf("%s exists", file)
 		}
-		d, err := softdevice.New(name)
+		d, err := softdevice.New(protocol.CleanDeviceName(name))
 		if err != nil {
 			return err
 		}
@@ -255,7 +255,7 @@ func run(cmd, file, name string, args []string) error {
 			if err != nil {
 				return err
 			}
-			e, err := d.Decide(o, cmd, time.Now())
+			e, err := d.Decide(o, sess.Roster.User, cmd, time.Now())
 			if err != nil {
 				return err
 			}

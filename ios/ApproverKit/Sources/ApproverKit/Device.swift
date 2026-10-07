@@ -19,10 +19,11 @@ public struct Device: Sendable {
 
     // MARK: card
 
-    /// The signed device card for enrollment. Signing uses the approve key, so it asks for Face ID / the PIN.
+    /// The signed device card for enrollment. Signing uses the approve key, so it asks for Face ID / the PIN. The name
+    /// is cleaned to what verifiers accept (`cleanDeviceName`).
     public func card(name: String, now: Date = Date(), pin: String? = nil) throws -> Envelope {
         let pk = try keys.publicKeys()
-        let card = DeviceCard(v: protocolVersion, deviceId: pk.deviceID, name: name,
+        let card = DeviceCard(v: protocolVersion, deviceId: pk.deviceID, name: cleanDeviceName(name),
                               approveKey: B64.encode(pk.approve), denyKey: B64.encode(pk.deny), encKey: B64.encode(pk.enc),
                               createdAt: Int64(now.timeIntervalSince1970))
         let payload = try Coders.encoder.encode(card)
@@ -49,6 +50,7 @@ public struct Device: Sendable {
         guard env.kid == listing.adapter else { throw ProtocolError.mismatch("record signer differs from the hub's listing") }
         let payload = try verifyEd25519(env, pinned: pinned)
         let rec = try Coders.decoder.decode(Record.self, from: payload)
+        guard rec.t == PayloadType.record else { throw ProtocolError.malformed("payload is a \(rec.t), not a record") }
         guard rec.v == protocolVersion else { throw ProtocolError.malformed("record version \(rec.v)") }
         guard rec.adapter == env.kid else { throw ProtocolError.mismatch("record names another adapter than its signer") }
         guard rec.id == listing.id, rec.adapter == listing.adapter else {
@@ -59,10 +61,11 @@ public struct Device: Sendable {
 
     // MARK: decisions
 
-    /// Signs a decision: approve with the approve key (Face ID / PIN), deny with the deny key.
-    public func decide(_ req: OpenedRequest, approve: Bool, now: Date = Date(), pin: String? = nil) throws -> Envelope {
+    /// Signs a decision for `user`, the account whose roster this device is on: approve with the approve key (Face ID /
+    /// PIN), deny with the deny key.
+    public func decide(_ req: OpenedRequest, user: String, approve: Bool, now: Date = Date(), pin: String? = nil) throws -> Envelope {
         let id = try deviceID()
-        let d = Decision(v: protocolVersion, requestId: req.record.id, adapter: req.record.adapter,
+        let d = Decision(v: protocolVersion, user: user, requestId: req.record.id, adapter: req.record.adapter,
                          decision: approve ? Decision.approve : Decision.deny, recordHash: B64.encode(sha256(req.payload)),
                          nonce: req.record.nonce, deviceId: id, ts: Int64(now.timeIntervalSince1970))
         let payload = try Coders.encoder.encode(d)
@@ -78,6 +81,7 @@ public struct Device: Sendable {
         guard env.alg == Envelope.ed25519, env.kid == hubAck.adapter else { throw ProtocolError.mismatch("ack signer") }
         let payload = try verifyEd25519(env, pinned: pinned)
         let ack = try Coders.decoder.decode(Ack.self, from: payload)
+        guard ack.t == PayloadType.ack else { throw ProtocolError.malformed("payload is a \(ack.t), not an ack") }
         guard ack.adapter == env.kid, ack.requestId == hubAck.requestId else {
             throw ProtocolError.mismatch("ack differs from the hub's listing")
         }
@@ -147,6 +151,31 @@ public struct EnrollmentLink: Equatable, Sendable {
         self.user = user
         self.mode = mode
     }
+}
+
+/// The longest device name a card may carry, in UTF-8 bytes. Mirrors Go's protocol.MaxDeviceName.
+public let maxDeviceName = 100
+
+/// Mirrors Go's ValidDeviceName: at most `maxDeviceName` bytes, and no control, format (bidi overrides, zero-width),
+/// line or paragraph separator characters.
+public func isValidDeviceName(_ s: String) -> Bool {
+    guard s.utf8.count <= maxDeviceName else { return false }
+    return s.unicodeScalars.allSatisfy { u in
+        switch u.properties.generalCategory {
+        case .control, .format, .lineSeparator, .paragraphSeparator: return false
+        default: return true
+        }
+    }
+}
+
+/// A name `isValidDeviceName` accepts: sanitized, then cut to `maxDeviceName` bytes between characters.
+public func cleanDeviceName(_ s: String) -> String {
+    var out = ""
+    for c in sanitize(s) {
+        guard out.utf8.count + String(c).utf8.count <= maxDeviceName else { break }
+        out.append(c)
+    }
+    return out
 }
 
 /// Makes requester-written text safe to show: no control or format characters (bidi overrides, zero-width), one line.

@@ -53,7 +53,7 @@ func TestWriteGoSealed(t *testing.T) {
 	dev, _ := softdevice.New("interop device")
 	ce, _ := dev.Card(now)
 	adPub, adKey, _ := ed25519.GenerateKey(nil)
-	rec := protocol.Record{V: 1, ID: "interop-1", Adapter: "demo", Kind: "demo.test", Shape: protocol.ShapeLease,
+	rec := protocol.Record{T: protocol.TypeRecord, V: 1, ID: "interop-1", Adapter: "demo", Kind: "demo.test", Shape: protocol.ShapeLease,
 		Risk: protocol.RiskHigh, Title: "claude wants ADMIN on db-01", Requester: "claude",
 		OnBehalfOf: &protocol.Principal{Principal: "slack:U0123", Display: "Kim", AttestedBy: "chatbot@agent-host"},
 		Facts:      []protocol.Fact{{Label: "Host", Value: "db-01"}, {Label: "Tier", Value: "ADMIN", Level: "danger"}},
@@ -107,8 +107,8 @@ func TestSwiftDecision(t *testing.T) {
 	dp, _ := s.Decision.PayloadBytes()
 	var d protocol.Decision
 	_ = json.Unmarshal(dp, &d)
-	// Judge it at the time it was made: the fixture is old by the time this runs.
-	got, err := protocol.VerifyDecision(s.Decision, card, g.AdapterID, payload, rec, time.Unix(d.TS, 0))
+	// Judge it at the time it was made: the fixture is old by the time this runs. The Swift side decides as user vince.
+	got, err := protocol.VerifyDecision(s.Decision, card, "vince", g.AdapterID, payload, rec, time.Unix(d.TS, 0))
 	if err != nil {
 		t.Fatalf("Swift-made decision: %v", err)
 	}

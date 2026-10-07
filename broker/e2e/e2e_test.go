@@ -162,7 +162,7 @@ func (w *world) head() protocol.Head {
 
 func (w *world) decide(d *softdevice.Device, o softdevice.Opened, dec string) {
 	w.t.Helper()
-	e, _ := d.Decide(o, dec, w.clock())
+	e, _ := d.Decide(o, "vince", dec, w.clock())
 	w.ad.Handle(w.ctx, adapter.QueuedDecision{Adapter: "demo", RequestID: o.Record.ID, DeviceID: e.Kid, Decision: e})
 }
 
@@ -233,7 +233,7 @@ func TestApproveEndToEnd(t *testing.T) {
 	if o.Record.Title != it.Title || o.Record.Reason != "fix the backups" {
 		t.Fatalf("record %+v", o.Record)
 	}
-	dec, _ := w.phone.Decide(o, protocol.Approve, w.clock())
+	dec, _ := w.phone.Decide(o, "vince", protocol.Approve, w.clock())
 	if err := w.phoneHub.Decide(w.ctx, "demo", o.Record.ID, dec); err != nil {
 		t.Fatal(err)
 	}
@@ -266,14 +266,14 @@ func TestForgedDecisionsDoNothing(t *testing.T) {
 	it, o := w.openOne(w.phone, w.phoneHub, "helper wants ADMIN on web-02")
 
 	// 1. A device of another user (enrolled at the hub, not trusted by the adapter), signing the real record.
-	strDec, _ := w.stranger.Decide(o, protocol.Approve, w.clock())
+	strDec, _ := w.stranger.Decide(o, "kim", protocol.Approve, w.clock())
 	// 2. A deny signed by the phone, with the payload edited to "approve".
-	deny, _ := w.phone.Decide(o, protocol.Deny, w.clock())
+	deny, _ := w.phone.Decide(o, "vince", protocol.Deny, w.clock())
 	p, _ := deny.PayloadBytes()
 	deny.Payload = protocol.B64([]byte(strings.Replace(string(p), `"deny"`, `"approve"`, 1)))
 	// 3. A genuine phone approval of a different record.
 	_, oo := w.openOne(w.phone, w.phoneHub, "harmless")
-	swapped, _ := w.phone.Decide(oo, protocol.Approve, w.clock())
+	swapped, _ := w.phone.Decide(oo, "vince", protocol.Approve, w.clock())
 
 	for _, d := range []protocol.Envelope{strDec, deny, swapped} {
 		w.ad.Handle(w.ctx, adapter.QueuedDecision{Adapter: "demo", RequestID: o.Record.ID, DeviceID: d.Kid, Decision: d})
@@ -324,7 +324,7 @@ func TestUnansweredIsDenied(t *testing.T) {
 func TestStaleDecisionRejected(t *testing.T) {
 	w := newWorld(t)
 	it, o := w.openOne(w.phone, w.phoneHub, "x")
-	dec, _ := w.phone.Decide(o, protocol.Approve, w.clock())
+	dec, _ := w.phone.Decide(o, "vince", protocol.Approve, w.clock())
 	w.advance(6 * time.Minute) // held back by the transport for longer than the window
 	w.ad.Handle(w.ctx, adapter.QueuedDecision{Adapter: "demo", RequestID: o.Record.ID, DeviceID: dec.Kid, Decision: dec})
 	if w.outcome(it.Key) != "pending" {
@@ -437,7 +437,7 @@ func TestHostileHubRosters(t *testing.T) {
 		w.tick()
 		_, o := w.openOne(w.phone, w.phoneHub, "after: "+name)
 		for _, d := range []*softdevice.Device{phone2, mallory} {
-			e, _ := d.Decide(o, protocol.Approve, w.clock())
+			e, _ := d.Decide(o, "vince", protocol.Approve, w.clock())
 			w.ad.Handle(w.ctx, adapter.QueuedDecision{Adapter: "demo", RequestID: o.Record.ID, DeviceID: e.Kid, Decision: e})
 		}
 		if a := w.lastAck(o.Record.ID); a.Outcome != protocol.OutcomeRejected {
@@ -469,4 +469,46 @@ func mustCard(t *testing.T, d *softdevice.Device) protocol.Envelope {
 		t.Fatal(err)
 	}
 	return c
+}
+
+// A device on the rosters of two trusted users speaks for the user its decision names, and only for a user whose
+// roster it is on.
+func TestDecisionNamesItsUser(t *testing.T) {
+	w := newWorld(t)
+	// kim's stranger puts vince's phone on kim's roster too, and the adapter trusts kim as well.
+	kim, _ := w.store.Chain("kim")
+	h, err := protocol.VerifyChain(kim, "kim", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r2, _ := w.stranger.Admit(h, mustCard(t, w.phone), w.now)
+	w.store.ForceChain("kim", append(kim, r2))
+	if err := adapter.TrustAddUser(w.dir, "kim", h.Account); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, c := range []struct{ user, want string }{
+		{"vince", "denied by vince on phone"},
+		{"kim", "denied by kim on phone"},
+	} {
+		it, o := w.openOne(w.phone, w.phoneHub, "as "+c.user)
+		e, _ := w.phone.Decide(o, c.user, protocol.Deny, w.clock())
+		w.ad.Handle(w.ctx, adapter.QueuedDecision{Adapter: "demo", RequestID: o.Record.ID, DeviceID: e.Kid, Decision: e})
+		if a := w.lastAck(o.Record.ID); a.Outcome != protocol.OutcomeDenied || a.Detail != c.want {
+			t.Errorf("as %s: ack %+v, want %q", c.user, a, c.want)
+		}
+		if w.outcome(it.Key) != "resolved" {
+			t.Errorf("as %s: not denied at the service", c.user)
+		}
+	}
+
+	it, o := w.openOne(w.phone, w.phoneHub, "as a user whose roster the phone is not on")
+	e, _ := w.phone.Decide(o, "lee", protocol.Approve, w.clock())
+	w.ad.Handle(w.ctx, adapter.QueuedDecision{Adapter: "demo", RequestID: o.Record.ID, DeviceID: e.Kid, Decision: e})
+	if a := w.lastAck(o.Record.ID); a.Outcome != protocol.OutcomeRejected || !strings.Contains(a.Detail, "another user") {
+		t.Errorf("ack %+v", a)
+	}
+	if w.outcome(it.Key) != "pending" {
+		t.Error("a decision for a user the phone does not belong to acted")
+	}
 }

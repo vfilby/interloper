@@ -437,9 +437,12 @@ final class AppModel: ObservableObject {
             outcomes[req.id] = .failed("this device is not a member of \(user ?? "its account")")
             return
         }
+        guard let user else { return }
         let keys = self.keys
         do {
-            let env = try await withApproveKey(pin: pin) { pin in try Device(keys: keys).decide(req, approve: approve, pin: pin) }
+            let env = try await withApproveKey(pin: pin) { pin in
+                try Device(keys: keys).decide(req, user: user, approve: approve, pin: pin)
+            }
             sentHashes[req.id, default: []].append(B64.encode(sha256(try B64.decode(env.payload))))
             try await client.postDecision(DecisionPost(adapter: req.record.adapter, requestId: req.record.id, decision: env))
             outcomes[req.id] = .sent

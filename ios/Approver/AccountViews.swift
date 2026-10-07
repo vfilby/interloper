@@ -13,6 +13,12 @@ func joinFingerprint(_ j: HubJoin) -> String {
     return Fingerprint.of(ak)
 }
 
+/// The name in a join request's verified card (not the hub's copy beside it), made safe to show.
+func joinName(_ j: HubJoin) -> String {
+    guard let c = try? verifyCard(j.card), c.deviceId == j.deviceId else { return sanitize(j.name) }
+    return sanitize(c.name)
+}
+
 /// Pending, removed or a refused roster: shown on top of the inbox.
 struct MembershipBanner: View {
     @EnvironmentObject var model: AppModel
@@ -134,7 +140,7 @@ struct JoinDetailView: View {
     var body: some View {
         List {
             Section {
-                LabeledContent("Name", value: sanitize(join.name))
+                LabeledContent("Name", value: joinName(join))
                 Text(joinFingerprint(join)).font(.title2.monospaced().weight(.bold))
             } header: {
                 Text("Asking to join \(model.user ?? "")")

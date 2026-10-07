@@ -45,6 +45,20 @@ ECDSA signatures are the 64-byte raw `r || s` form (CryptoKit `rawRepresentation
 checks the signature with the key it has **pinned** for `kid` before parsing the payload, and then checks that the
 payload names the same signer (`adapter` / `device_id`).
 
+### Payload types
+
+Every signed payload carries `"t"`, saying what it is, and every verifier refuses a payload whose `t` is not the
+kind it expects (a missing `t` included). One key signs more than one kind: the adapter key signs records and acks,
+and a device's approve key signs cards, rosters and approvals.
+
+| `t` | Signed with | Section |
+|---|---|---|
+| `record` | adapter key | Request record |
+| `ack` | adapter key | Acknowledgement |
+| `decision` | device approve key, or deny key for a deny | Decision |
+| `card` | device approve key | Device card |
+| `roster` | device approve key | Users and rosters |
+
 ## Sealed box (adapter → device)
 
 ```json
@@ -60,6 +74,7 @@ then encrypt, so the hub sees neither the record nor the adapter's signature ove
 
 ```json
 {
+  "t": "record",
   "v": 1,
   "id": "<adapter-scoped request id>",
   "adapter": "warpgate",
@@ -86,6 +101,8 @@ then encrypt, so the hub sees neither the record nor the adapter's signature ove
   part and are shown first. `level` is `""`, `"warn"` or `"danger"`. The app renders any kind from these fields
   alone. It needs no kind-specific code.
 - `reason` is the requester's claim. The app shows it after the facts, quoted and labelled as the requester's.
+  Adapters bound it where it comes in: at most 1 KiB, without C0 or C1 control characters or U+2028/U+2029 (line
+  breaks and tabs become spaces). The app still sanitizes everything it shows.
 - `on_behalf_of` is optional: the human the requester says it acts for, and which component attested it. It is a
   claim by `attested_by`, not by the requester.
 - `lease` is present only when `shape` = `lease`. `max_uses` 0 means unlimited within the duration.
@@ -98,7 +115,9 @@ A signed envelope (`es256`, `kid` = device id) over:
 
 ```json
 {
+  "t": "decision",
   "v": 1,
+  "user": "<user whose roster the device is on>",
   "request_id": "<record id>",
   "adapter": "warpgate",
   "decision": "approve" | "deny",
@@ -109,10 +128,12 @@ A signed envelope (`es256`, `kid` = device id) over:
 }
 ```
 
+- `user` says which account the device decides for. A device can be on the rosters of two users an adapter trusts;
+  the decision holds only against the roster of the user it names, and that user is the one the adapter records.
 - `approve` must be signed with the device's **approve** key. `deny` may be signed with the deny key or the
   approve key.
 - The adapter acts only if all of these hold:
-  - the device is pinned and not revoked, and the key matches the decision;
+  - the device is on the current roster of `user`, a user this adapter pins, and the key matches the decision;
   - `adapter` is this adapter;
   - `record_hash` equals the hash of the record it sent;
   - the nonce is unused;
@@ -127,7 +148,7 @@ A signed envelope (`es256`, `kid` = device id) over:
 A signed envelope (`ed25519`, `kid` = adapter id) over:
 
 ```json
-{"v": 1, "request_id": "…", "adapter": "warpgate", "outcome": "approved" | "denied" | "rejected" | "expired" | "failed",
+{"t": "ack", "v": 1, "request_id": "…", "adapter": "warpgate", "outcome": "approved" | "denied" | "rejected" | "expired" | "failed",
  "detail": "…", "decision_hash": "<b64 SHA-256 of the decision payload bytes, or empty>", "ts": 1790000125}
 ```
 
@@ -143,9 +164,14 @@ the adapter acts on it.
 A signed envelope (`es256`, `kid` = device id, signed with the approve key: making it needs Face ID) over:
 
 ```json
-{"v": 1, "device_id": "…", "name": "Vince's iPhone", "approve_key": "<b64>", "deny_key": "<b64>",
+{"t": "card", "v": 1, "device_id": "…", "name": "Vince's iPhone", "approve_key": "<b64>", "deny_key": "<b64>",
  "enc_key": "<b64>", "created_at": 1790000000}
 ```
+
+`name` is at most 100 bytes of UTF-8 with no control, format (bidi overrides, zero-width), line separator or
+paragraph separator characters (Unicode general categories Cc, Cf, Zl, Zp); a card with another name does not verify.
+Devices clean the name before signing their card. It is shown when a join is approved and written into deny reasons
+("denied by vince on Vince's iPhone").
 
 A card says what a device's keys are. Which **user** a device belongs to is said only by that user's roster.
 
@@ -156,6 +182,7 @@ roster is a signed envelope (`es256`, `kid` = id of the signing device) over:
 
 ```json
 {
+  "t": "roster",
   "v": 1,
   "user": "vince",
   "seq": 2,
@@ -167,6 +194,7 @@ roster is a signed envelope (`es256`, `kid` = id of the signing device) over:
 
 A chain `[r1, r2, …, rn]` is valid only if all of these hold:
 - **r1 (genesis):** `seq` 1, empty `prev`. It is signed by the approve key of a device that is a member of r1.
+  Verifiers check the signer's own card, then r1's signature, and only then the other member cards.
 - **Each later rk:**
   - `seq` = k and `user` is unchanged;
   - `prev` = SHA-256 of r(k-1)'s payload bytes;
@@ -238,7 +266,7 @@ join is not approved yet (enroll `status` `pending`) gets 403 on every device ro
 | `GET /v1/device/joins` | device | `[{device_id, name, card, requested_at}]`: pending join requests for the device's user |
 | `GET /v1/device/adapters` | device | `[{id, key, fingerprint}]`: adapter keys, pinned once the person confirms each fingerprint |
 | `GET /v1/device/requests` | device | `[{id, adapter, kind, created_at, expires_at, box}]`: pending requests that have a box for this device |
-| `POST /v1/device/decisions` | device | `{adapter, request_id, decision: envelope}`. The hub checks the signature against the device's card and that the decision names this device, adapter and request (it cannot check the record hash: it never sees the record); otherwise 400. Envelopes over 2 KB are refused. A device has at most one decision queued per request: a newer one replaces it. At most 500 decisions are queued per adapter; past that, 429 until the adapter takes them. |
+| `POST /v1/device/decisions` | device | `{adapter, request_id, decision: envelope}`. The hub checks the signature against the device's card and that the decision names this device, its user, adapter and request (it cannot check the record hash: it never sees the record); otherwise 400. Envelopes over 2 KB are refused. A device has at most one decision queued per request: a newer one replaces it. At most 500 decisions are queued per adapter; past that, 429 until the adapter takes them. |
 | `GET /v1/device/acks?since=<unix>` | device | `[{adapter, request_id, ack: envelope}]`: acks and notes of the requests that were sealed for this device |
 
 The enrollment link the management UI shows as a QR code (and as text):

@@ -85,6 +85,8 @@ Where things run:
 | Approve, then replay | `broker/e2e` tests |
 | Forged decisions (a device the adapter does not trust, an edited deny, a swapped approval) do nothing and leave the request pending | `broker/e2e` tests |
 | A request changed after it was shown is not acted on; it is re-sent | `broker/e2e` tests |
+| A device on two trusted users' rosters decides for the user its decision names, and for no user whose roster it is not on | `broker/e2e` tests |
+| No signed payload passes for another kind (`t`: record, ack, decision, card, roster) | `protocol` tests, `ApproverKit` tests |
 | Unanswered → denied at the service; stale decision rejected; device removed from trust → its decisions do nothing | `broker/e2e` tests |
 | Real binaries over HTTP, management UI form flows, CSRF refusal | `scripts/e2e-cli.sh` |
 | Real app in the simulator: enroll, approve with verified ack, high risk refuses a tap and needs a long press | `scripts/e2e-ui.sh` |

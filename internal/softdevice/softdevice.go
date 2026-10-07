@@ -8,7 +8,6 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -49,7 +48,7 @@ func (d *Device) ID() string { return protocol.DeviceID(pub(d.Approve)) }
 // Card returns the signed device card.
 func (d *Device) Card(now time.Time) (protocol.Envelope, error) {
 	return protocol.SignES256(d.Approve, d.ID(), protocol.DeviceCard{
-		V: protocol.Version, DeviceID: d.ID(), Name: d.Name,
+		T: protocol.TypeCard, V: protocol.Version, DeviceID: d.ID(), Name: d.Name,
 		ApproveKey: protocol.B64(pub(d.Approve)), DenyKey: protocol.B64(pub(d.Deny)),
 		EncKey: protocol.B64(d.Enc.PublicKey().Bytes()), CreatedAt: now.Unix(),
 	})
@@ -67,28 +66,22 @@ func (d *Device) Read(box protocol.Sealed, adapterKey []byte) (Opened, error) {
 	if err != nil {
 		return Opened{}, err
 	}
-	p, err := protocol.VerifyEd25519(env, adapterKey)
+	r, p, err := protocol.VerifyRecord(env, adapterKey)
 	if err != nil {
-		return Opened{}, fmt.Errorf("record from %s: %w", env.Kid, err)
-	}
-	var r protocol.Record
-	if err := json.Unmarshal(p, &r); err != nil {
 		return Opened{}, err
-	}
-	if r.Adapter != env.Kid {
-		return Opened{}, errors.New("record names another adapter than its signer")
 	}
 	return Opened{Record: r, Payload: p}, nil
 }
 
-// Decide signs a decision on an opened record: approve with the approve key, deny with the deny key.
-func (d *Device) Decide(o Opened, decision string, now time.Time) (protocol.Envelope, error) {
+// Decide signs a decision on an opened record for user, whose roster the device is on: approve with the approve key,
+// deny with the deny key.
+func (d *Device) Decide(o Opened, user, decision string, now time.Time) (protocol.Envelope, error) {
 	k := d.Deny
 	if decision == protocol.Approve {
 		k = d.Approve
 	}
 	return protocol.SignES256(k, d.ID(), protocol.Decision{
-		V: protocol.Version, RequestID: o.Record.ID, Adapter: o.Record.Adapter, Decision: decision,
+		T: protocol.TypeDecision, V: protocol.Version, User: user, RequestID: o.Record.ID, Adapter: o.Record.Adapter, Decision: decision,
 		RecordHash: protocol.B64(protocol.Hash(o.Payload)), Nonce: o.Record.Nonce, DeviceID: d.ID(), TS: now.Unix(),
 	})
 }
@@ -147,7 +140,7 @@ func (d *Device) Genesis(user string, now time.Time) (protocol.Envelope, error) 
 	if err != nil {
 		return protocol.Envelope{}, err
 	}
-	return protocol.SignRoster(d.Approve, d.ID(), protocol.Roster{V: protocol.Version, User: user, Seq: 1,
+	return protocol.SignRoster(d.Approve, d.ID(), protocol.Roster{T: protocol.TypeRoster, V: protocol.Version, User: user, Seq: 1,
 		Members: []protocol.Member{{Kind: protocol.MemberDevice, Card: card}}, TS: now.Unix()})
 }
 

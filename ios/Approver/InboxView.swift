@@ -21,7 +21,7 @@ struct InboxView: View {
                     ForEach(model.joins) { j in
                         NavigationLink(value: JoinRoute(deviceID: j.deviceId)) {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(sanitize(j.name)).font(.headline)
+                                Text(joinName(j)).font(.headline)
                                 Text(joinFingerprint(j)).font(.footnote.monospaced()).foregroundStyle(.secondary)
                             }
                         }

@@ -148,16 +148,5 @@ func (c *Client) Acks(ctx context.Context, since int64) ([]HubAck, error) {
 
 // ReadAck verifies an ack against a pinned adapter key.
 func ReadAck(e protocol.Envelope, adapterKey []byte) (protocol.Ack, error) {
-	var a protocol.Ack
-	p, err := protocol.VerifyEd25519(e, adapterKey)
-	if err != nil {
-		return a, err
-	}
-	if err := json.Unmarshal(p, &a); err != nil {
-		return a, err
-	}
-	if a.Adapter != e.Kid {
-		return a, fmt.Errorf("ack names adapter %q but is signed by %q", a.Adapter, e.Kid)
-	}
-	return a, nil
+	return protocol.VerifyAck(e, adapterKey)
 }

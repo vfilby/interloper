@@ -16,6 +16,7 @@ public struct Member: Codable, Equatable, Sendable {
 }
 
 public struct Roster: Codable, Equatable, Sendable {
+    public var t: String = PayloadType.roster
     public var v: Int
     public var user: String
     public var seq: Int
@@ -54,12 +55,17 @@ public func isValidUserID(_ s: String) -> Bool {
     }
 }
 
-/// Mirrors Go's VerifyCard: self-signed by the approve key, id = fingerprint of that key, all keys parse.
+/// Mirrors Go's VerifyCard: self-signed by the approve key, typed a card, id = fingerprint of that key, a valid name,
+/// all keys parse.
 public func verifyCard(_ env: Envelope) throws -> DeviceCard {
     let payload = try B64.decode(env.payload)
     let card = try Coders.decoder.decode(DeviceCard.self, from: payload)
     let ak = try B64.decode(card.approveKey)
     _ = try verifyES256(env, x963: ak)
+    guard card.t == PayloadType.card else { throw ProtocolError.malformed("card: payload is a \(card.t), not a card") }
+    guard isValidDeviceName(card.name) else {
+        throw ProtocolError.malformed("card: device name longer than \(maxDeviceName) bytes or with control or format characters")
+    }
     guard card.v == protocolVersion, card.deviceId == Fingerprint.deviceID(approveKey: ak), env.kid == card.deviceId else {
         throw ProtocolError.mismatch("card: version, device id and approve key do not match")
     }
@@ -73,6 +79,7 @@ private func parseRoster(_ payload: Data) throws -> (Roster, [String: DeviceCard
     do { r = try Coders.decoder.decode(Roster.self, from: payload) } catch {
         throw ProtocolError.malformed("roster: \(error.localizedDescription)")
     }
+    guard r.t == PayloadType.roster else { throw ProtocolError.malformed("roster: payload is a \(r.t), not a roster") }
     guard r.v == protocolVersion, isValidUserID(r.user), r.seq >= 1, !r.members.isEmpty else {
         throw ProtocolError.malformed("roster: bad version, user, seq or empty members")
     }
@@ -97,12 +104,30 @@ private func signed(_ env: Envelope, by devs: [String: DeviceCard]) throws -> Da
     return try verifyES256(env, x963: B64.decode(c.approveKey))
 }
 
+/// Finds and verifies the card of the member that claims to have signed a genesis roster.
+private func genesisSigner(_ env: Envelope) throws -> [String: DeviceCard] {
+    struct Members: Decodable { var members: [Member] }
+    let m: Members
+    do { m = try Coders.decoder.decode(Members.self, from: B64.decode(env.payload)) } catch {
+        throw ProtocolError.malformed("roster: \(error.localizedDescription)")
+    }
+    guard let mine = m.members.first(where: { $0.kind == Member.device && $0.card.kid == env.kid }) else {
+        throw ProtocolError.untrusted("roster signed by \(env.kid), which is not a member of the roster it must be signed under")
+    }
+    let c: DeviceCard
+    do { c = try verifyCard(mine.card) } catch {
+        throw ProtocolError.badSignature("roster member card: \(error.localizedDescription)")
+    }
+    return [c.deviceId: c]
+}
+
 /// Verifies a whole chain for `user`; `account` nil skips the pin (first sight, which then pins what it saw).
 public func verifyChain(_ chain: [Envelope], user: String, account: String?) throws -> Head {
     guard let first = chain.first else { throw ProtocolError.malformed("empty roster chain") }
-    let gp = try B64.decode(first.payload)
+    // Only the signer's card is verified before the genesis signature (it holds the key that signature is checked
+    // with); the other cards after, as extend does.
+    let gp = try signed(first, by: genesisSigner(first))
     let (r, devs) = try parseRoster(gp)
-    _ = try signed(first, by: devs)
     guard r.seq == 1, r.prev.isEmpty, r.user == user else {
         throw ProtocolError.mismatch("genesis: must be seq 1, no prev, and for this user")
     }

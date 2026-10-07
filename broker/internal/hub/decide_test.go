@@ -9,15 +9,29 @@ import (
 	"github.com/vfilby/interpose/internal/softdevice"
 )
 
-// decision signs a decision as the hub would receive it (the hub never sees the record, so the hash is made up).
+// decision signs a decision by a device of vince as the hub would receive it (the hub never sees the record, so the
+// hash is made up).
 func decision(t *testing.T, d *softdevice.Device, adapter, requestID, verdict string, approveKey bool, ts int64) protocol.Envelope {
 	t.Helper()
 	k := d.Deny
 	if approveKey {
 		k = d.Approve
 	}
-	e, err := protocol.SignES256(k, d.ID(), protocol.Decision{V: protocol.Version, RequestID: requestID, Adapter: adapter,
+	e, err := protocol.SignES256(k, d.ID(), protocol.Decision{T: protocol.TypeDecision, V: protocol.Version, User: "vince", RequestID: requestID, Adapter: adapter,
 		Decision: verdict, RecordHash: "h", Nonce: "n", DeviceID: d.ID(), TS: ts})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return e
+}
+
+// signedAs signs a deny on r1 by d for demo, as edited.
+func signedAs(t *testing.T, d *softdevice.Device, edit func(*protocol.Decision)) protocol.Envelope {
+	t.Helper()
+	dec := protocol.Decision{T: protocol.TypeDecision, V: protocol.Version, User: "vince", RequestID: "r1", Adapter: "demo",
+		Decision: protocol.Deny, RecordHash: "h", Nonce: "n", DeviceID: d.ID(), TS: 1}
+	edit(&dec)
+	e, err := protocol.SignES256(d.Deny, d.ID(), dec)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,6 +84,8 @@ func TestDecideRefusesJunk(t *testing.T) {
 		"for another adapter":        decision(t, acc.a, "other", "r1", protocol.Approve, true, now.Unix()),
 		"neither approve nor deny":   decision(t, acc.a, "demo", "r1", "maybe", true, now.Unix()),
 		"signed with the wrong algo": {Alg: protocol.AlgEd25519, Kid: acc.a.ID(), Payload: junk.Payload, Sig: junk.Sig},
+		"for another user":           signedAs(t, acc.a, func(d *protocol.Decision) { d.User = "kim" }),
+		"not typed a decision":       signedAs(t, acc.a, func(d *protocol.Decision) { d.T = protocol.TypeCard }),
 	} {
 		if err := st.Decide(acc.a.ID(), "demo", "r1", e, now); !errors.Is(err, ErrBadDecision) {
 			t.Errorf("%s: got %v, want ErrBadDecision", name, err)
