@@ -195,16 +195,25 @@ func (t *Trust) pinned(p Pin) bool {
 	return false
 }
 
-// Card finds a device on a trusted user's current roster, and that user.
-func (t *Trust) Card(id string) (protocol.DeviceCard, string, bool) {
+// Holder is a device card as found on one trusted user's current roster.
+type Holder struct {
+	User string
+	Card protocol.DeviceCard
+}
+
+// Holders finds a device on the current rosters of trusted users, sorted by user. Usually there is one; a device can
+// be on the rosters of two users, and the decision says which of them it speaks for.
+func (t *Trust) Holders(id string) []Holder {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
+	var out []Holder
 	for u, h := range t.heads {
 		if c, ok := h.Devices[id]; ok {
-			return c, u, true
+			out = append(out, Holder{User: u, Card: c})
 		}
 	}
-	return protocol.DeviceCard{}, "", false
+	sort.Slice(out, func(i, j int) bool { return out[i].User < out[j].User })
+	return out
 }
 
 // Cards lists every device on a trusted user's current roster.

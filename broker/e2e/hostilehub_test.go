@@ -64,7 +64,7 @@ func TestHostileHubCannotFillTheAuditLog(t *testing.T) {
 	acks := &countAcks{}
 	w.adHub.HTTP = &http.Client{Transport: acks}
 	it, o := w.openOne(w.phone, w.phoneHub, "x")
-	strDec, _ := w.stranger.Decide(o, protocol.Approve, w.clock())
+	strDec, _ := w.stranger.Decide(o, "kim", protocol.Approve, w.clock())
 	before, _ := w.auditEvents()
 
 	huge := strings.Repeat("A", 1<<20)

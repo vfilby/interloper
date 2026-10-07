@@ -110,3 +110,23 @@ func TestRosterChain(t *testing.T) {
 		}
 	}
 }
+
+// A roster is typed: a card or a decision signed by the same approve key is not a roster.
+func TestRosterType(t *testing.T) {
+	now := time.Unix(1_790_000_000, 0)
+	a, _ := softdevice.New("phone A")
+	card, _ := a.Card(now)
+	r := protocol.Roster{T: protocol.TypeCard, V: protocol.Version, User: "vince", Seq: 1,
+		Members: []protocol.Member{{Kind: protocol.MemberDevice, Card: card}}, TS: now.Unix()}
+	e, _ := protocol.SignRoster(a.Approve, a.ID(), r)
+	if _, err := protocol.VerifyChain([]protocol.Envelope{e}, "vince", ""); err == nil || !strings.Contains(err.Error(), "not a roster") {
+		t.Fatalf("roster typed a card: %v", err)
+	}
+	// A genesis signed by a device that is not on it is refused before any member card is looked at.
+	b, _ := softdevice.New("phone B")
+	r.T = protocol.TypeRoster
+	e, _ = protocol.SignRoster(b.Approve, b.ID(), r)
+	if _, err := protocol.VerifyChain([]protocol.Envelope{e}, "vince", ""); err == nil || !strings.Contains(err.Error(), "not a member") {
+		t.Fatalf("genesis signed by a stranger: %v", err)
+	}
+}

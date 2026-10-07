@@ -886,7 +886,7 @@ func (st *Store) Decide(deviceID, adapter, requestID string, d protocol.Envelope
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrBadDecision, err)
 	}
-	if _, err := protocol.VerifyDecisionSignature(d, card, adapter, requestID); err != nil {
+	if _, err := protocol.VerifyDecisionSignature(d, card, dev.User, adapter, requestID); err != nil {
 		return fmt.Errorf("%w: %v", ErrBadDecision, err)
 	}
 	q := QueuedDecision{Adapter: adapter, RequestID: requestID, DeviceID: deviceID, Decision: d, At: now}

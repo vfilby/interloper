@@ -4,6 +4,16 @@ import Foundation
 
 public let protocolVersion = 1
 
+/// Every signed payload says what it is in its `t` field, and every verifier checks it (docs/PROTOCOL.md, "Payload
+/// types"): the same key signs more than one kind of payload.
+public enum PayloadType {
+    public static let record = "record"     // adapter key
+    public static let ack = "ack"           // adapter key
+    public static let decision = "decision" // device approve or deny key
+    public static let card = "card"         // device approve key
+    public static let roster = "roster"     // device approve key
+}
+
 public struct Envelope: Codable, Equatable, Sendable {
     public var alg: String
     public var kid: String
@@ -43,6 +53,7 @@ public struct Lease: Codable, Equatable, Sendable {
 }
 
 public struct Record: Codable, Equatable, Sendable {
+    public var t: String = PayloadType.record
     public var v: Int
     public var id: String
     public var adapter: String
@@ -64,7 +75,10 @@ public struct Record: Codable, Equatable, Sendable {
 }
 
 public struct Decision: Codable, Equatable, Sendable {
+    public var t: String = PayloadType.decision
     public var v: Int
+    /// The user whose roster the device is on: the adapter checks the decision against that roster only.
+    public var user: String
     public var requestId: String
     public var adapter: String
     public var decision: String
@@ -78,6 +92,7 @@ public struct Decision: Codable, Equatable, Sendable {
 }
 
 public struct Ack: Codable, Equatable, Sendable {
+    public var t: String = PayloadType.ack
     public var v: Int
     public var requestId: String
     public var adapter: String
@@ -91,6 +106,7 @@ public struct Ack: Codable, Equatable, Sendable {
 }
 
 public struct DeviceCard: Codable, Equatable, Sendable {
+    public var t: String = PayloadType.card
     public var v: Int
     public var deviceId: String
     public var name: String

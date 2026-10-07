@@ -17,6 +17,7 @@ type Member struct {
 
 // Roster is one version of a user's device list (docs/PROTOCOL.md, "Users and rosters").
 type Roster struct {
+	T       string   `json:"t"` // TypeRoster
 	V       int      `json:"v"`
 	User    string   `json:"user"`
 	Seq     int      `json:"seq"`
@@ -62,6 +63,9 @@ func parseRoster(p []byte) (Roster, map[string]DeviceCard, error) {
 	if err := json.Unmarshal(p, &r); err != nil {
 		return r, nil, fmt.Errorf("roster: %w", err)
 	}
+	if r.T != TypeRoster {
+		return r, nil, fmt.Errorf("roster: payload is a %q, not a roster", r.T)
+	}
 	if r.V != Version || !ValidUserID(r.User) || r.Seq < 1 || len(r.Members) == 0 {
 		return r, nil, errors.New("roster: bad version, user, seq or empty members")
 	}
@@ -102,17 +106,19 @@ func VerifyChain(chain []Envelope, user, account string) (Head, error) {
 	if len(chain) == 0 {
 		return Head{}, errors.New("empty roster chain")
 	}
-	// Genesis: signed by one of its own members.
-	gp, err := UnB64(chain[0].Payload)
+	// Genesis: signed by one of its own members. Only the signer's card is verified before the roster's signature
+	// (it holds the key that signature is checked with); the other cards after, as Extend does.
+	signer, err := genesisSigner(chain[0])
 	if err != nil {
-		return Head{}, err
+		return Head{}, fmt.Errorf("genesis: %w", err)
+	}
+	gp, err := signedBy(chain[0], signer)
+	if err != nil {
+		return Head{}, fmt.Errorf("genesis: %w", err)
 	}
 	r, devs, err := parseRoster(gp)
 	if err != nil {
 		return Head{}, err
-	}
-	if _, err := signedBy(chain[0], devs); err != nil {
-		return Head{}, fmt.Errorf("genesis: %w", err)
 	}
 	if r.Seq != 1 || r.Prev != "" || r.User != user {
 		return Head{}, errors.New("genesis: must be seq 1, no prev, and for this user")
@@ -128,6 +134,30 @@ func VerifyChain(chain []Envelope, user, account string) (Head, error) {
 		}
 	}
 	return head, nil
+}
+
+// genesisSigner finds and verifies the card of the member that claims to have signed a genesis roster.
+func genesisSigner(e Envelope) (map[string]DeviceCard, error) {
+	p, err := UnB64(e.Payload)
+	if err != nil {
+		return nil, err
+	}
+	var r struct {
+		Members []Member `json:"members"`
+	}
+	if err := json.Unmarshal(p, &r); err != nil {
+		return nil, fmt.Errorf("roster: %w", err)
+	}
+	for _, m := range r.Members {
+		if m.Kind == MemberDevice && m.Card.Kid == e.Kid {
+			c, err := VerifyCard(m.Card)
+			if err != nil {
+				return nil, fmt.Errorf("roster member: %w", err)
+			}
+			return map[string]DeviceCard{c.DeviceID: c}, nil
+		}
+	}
+	return nil, fmt.Errorf("roster signed by %s, which is not a member of the roster it must be signed under", e.Kid)
 }
 
 // Extend checks that e is the next roster after head and returns the new head.
@@ -153,7 +183,7 @@ func Extend(head Head, e Envelope) (Head, error) {
 
 // NextRoster builds (unsigned) the roster after head with the given member cards, signed later by a current member.
 func NextRoster(head Head, members []Envelope, ts int64) Roster {
-	r := Roster{V: Version, User: head.Roster.User, Seq: head.Roster.Seq + 1, Prev: B64(Hash(head.Payload)), TS: ts}
+	r := Roster{T: TypeRoster, V: Version, User: head.Roster.User, Seq: head.Roster.Seq + 1, Prev: B64(Hash(head.Payload)), TS: ts}
 	for _, c := range members {
 		r.Members = append(r.Members, Member{Kind: MemberDevice, Card: c})
 	}

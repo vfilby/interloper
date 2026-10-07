@@ -252,7 +252,7 @@ func (ad *Adapter) newRecord(it Item, now time.Time) (*open, error) {
 		exp = now.Add(ad.cfg.TTL)
 	}
 	idb := protocol.NewRequestID()
-	rec := protocol.Record{V: protocol.Version, ID: idb, Adapter: ad.cfg.ID, Kind: it.Kind, Shape: it.Shape,
+	rec := protocol.Record{T: protocol.TypeRecord, V: protocol.Version, ID: idb, Adapter: ad.cfg.ID, Kind: it.Kind, Shape: it.Shape,
 		Risk: it.Risk, Title: it.Title, Requester: it.Requester, OnBehalfOf: it.OnBehalfOf, Facts: it.Facts,
 		Reason: it.Reason, Lease: it.Lease, CreatedAt: now.Unix(), ExpiresAt: exp.Unix(), Nonce: protocol.NewNonce()}
 	if rec.Shape == "" {
@@ -388,14 +388,34 @@ func (ad *Adapter) Handle(ctx context.Context, q QueuedDecision) {
 		reject("unknown or already decided request")
 		return
 	}
-	card, user, ok := ad.trust.Card(q.Decision.Kid)
-	if !ok {
+	holders := ad.trust.Holders(q.Decision.Kid)
+	if len(holders) == 0 {
 		reject("device " + q.Decision.Kid + " is not on the roster of a user this adapter trusts")
 		return
 	}
-	who := user + " on " + card.Name
-	d, err := protocol.VerifyDecision(q.Decision, card, ad.cfg.ID, o.Payload, o.Record, now)
+	// The decision names its user; it holds only against that user's roster. A device on two trusted users' rosters
+	// is tried against each, and the error that counts is one other than "names another user".
+	var (
+		d    protocol.Decision
+		who  string
+		err  error
+		errs []error
+	)
+	for _, h := range holders {
+		if d, err = protocol.VerifyDecision(q.Decision, h.Card, h.User, ad.cfg.ID, o.Payload, o.Record, now); err == nil {
+			who = h.User + " on " + h.Card.Name
+			break
+		}
+		errs = append(errs, err)
+	}
 	if err != nil {
+		err = errs[0]
+		for _, e := range errs {
+			if !errors.Is(e, protocol.ErrOtherUser) {
+				err = e
+				break
+			}
+		}
 		reject(err.Error())
 		return
 	}
@@ -456,7 +476,7 @@ func (ad *Adapter) sendAck(ctx context.Context, o *open, outcome, detail string,
 	if p, err := dec.PayloadBytes(); err == nil && len(p) > 0 {
 		dh = protocol.B64(protocol.Hash(p))
 	}
-	ack, err := protocol.SignEd25519(ad.cfg.Key, ad.cfg.ID, protocol.Ack{V: protocol.Version, RequestID: o.Record.ID,
+	ack, err := protocol.SignEd25519(ad.cfg.Key, ad.cfg.ID, protocol.Ack{T: protocol.TypeAck, V: protocol.Version, RequestID: o.Record.ID,
 		Adapter: ad.cfg.ID, Outcome: outcome, Detail: detail, DecisionHash: dh, TS: ad.now().Unix()})
 	if err == nil {
 		err = ad.hub.Ack(ctx, o.Record.ID, ack)

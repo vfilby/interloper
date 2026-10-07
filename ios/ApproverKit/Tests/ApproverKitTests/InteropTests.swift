@@ -61,15 +61,17 @@ final class InteropTests: XCTestCase {
         let opened = try dev.open(listing, pinned: pinned)
         let pk = try dev.keys.publicKeys()
 
-        let approve = try dev.decide(opened, approve: true)
+        let approve = try dev.decide(opened, user: "vince", approve: true)
         let p = try verifyES256(approve, x963: pk.approve)
         let d = try Coders.decoder.decode(Decision.self, from: p)
         XCTAssertEqual(d.decision, Decision.approve)
+        XCTAssertEqual(d.t, PayloadType.decision)
+        XCTAssertEqual(d.user, "vince")
         XCTAssertEqual(d.recordHash, B64.encode(sha256(try B64.decode(g.recordPayload))))
         XCTAssertEqual(d.nonce, opened.record.nonce)
         XCTAssertEqual(d.deviceId, pk.deviceID)
 
-        let deny = try dev.decide(opened, approve: false)
+        let deny = try dev.decide(opened, user: "vince", approve: false)
         XCTAssertNoThrow(try verifyES256(deny, x963: pk.deny))
         XCTAssertThrowsError(try verifyES256(deny, x963: pk.approve), "deny must use the deny key")
     }
@@ -94,7 +96,7 @@ final class InteropTests: XCTestCase {
         let opened = try dev.open(listing, pinned: pinned)
         // Made at the record's own time, so Go can judge it then, however old the fixture is.
         let at = Date(timeIntervalSince1970: TimeInterval(g.now + 60))
-        let out = SwiftDecision(card: try dev.card(name: "swift fixture"), decision: try dev.decide(opened, approve: true, now: at))
+        let out = SwiftDecision(card: try dev.card(name: "swift fixture"), decision: try dev.decide(opened, user: "vince", approve: true, now: at))
         try (Coders.encoder.encode(out) + Data("\n".utf8)).write(to: Self.interopDir.appendingPathComponent("swift-decision.json"))
     }
 
@@ -139,6 +141,54 @@ final class InteropTests: XCTestCase {
         let stranger = Device(keys: SoftwareKeyStore(storage: MemoryStorage()))
         try stranger.keys.generate(pin: nil)
         XCTAssertThrowsError(try stranger.open(listing, pinned: pinned))
+    }
+
+    /// An ack is checked for its type: the adapter signs records with the same key.
+    func testRecordIsNotAnAck() throws {
+        let key = Curve25519.Signing.PrivateKey()
+        let pinned = ["demo": key.publicKey.rawRepresentation]
+        let dev = Device(keys: SoftwareKeyStore(storage: MemoryStorage()))
+        func signed(_ json: String) throws -> HubAck {
+            let p = Data(json.utf8)
+            return HubAck(adapter: "demo", requestId: "r1", ack: Envelope(alg: Envelope.ed25519, kid: "demo",
+                payload: B64.encode(p), sig: B64.encode(try key.signature(for: p))))
+        }
+        let fields = #""v":1,"request_id":"r1","adapter":"demo","outcome":"approved","ts":1}"#
+        XCTAssertNoThrow(try dev.verifyAck(try signed(#"{"t":"ack","# + fields), pinned: pinned))
+        XCTAssertThrowsError(try dev.verifyAck(try signed(#"{"t":"record","# + fields), pinned: pinned))
+        XCTAssertThrowsError(try dev.verifyAck(try signed("{" + fields), pinned: pinned), "untyped")
+    }
+
+    func testDeviceNames() throws {
+        XCTAssertTrue(isValidDeviceName("Kim\u{2019}s iPhone \u{1F600}"))
+        XCTAssertTrue(isValidDeviceName(String(repeating: "n", count: maxDeviceName)))
+        for bad in [String(repeating: "n", count: maxDeviceName + 1), "phone\nevil", "phone\u{202E}evil", "phone\u{0085}",
+                    "phone\u{2028}", "a\u{200B}b"] {
+            XCTAssertFalse(isValidDeviceName(bad), bad.debugDescription)
+        }
+        XCTAssertEqual(cleanDeviceName("  a\tb\r\nc\u{2028}d  "), "a b c d")
+        XCTAssertEqual(cleanDeviceName("x\u{202E}y\u{200B}z\u{0007}\u{0085}"), "xyz")
+        XCTAssertEqual(cleanDeviceName(String(repeating: "\u{E9}", count: 60)), String(repeating: "\u{E9}", count: 50))
+        XCTAssertEqual(cleanDeviceName(String(repeating: "a", count: 99) + "\u{E9}xx"), String(repeating: "a", count: 99))
+
+        // A card is made with a clean name, and a card with a bad one does not verify.
+        let dev = Device(keys: SoftwareKeyStore(storage: MemoryStorage()))
+        try dev.keys.generate(pin: nil)
+        let card = try verifyCard(try dev.card(name: "phone\u{202E}" + String(repeating: "x", count: 200)))
+        XCTAssertEqual(card.name, "phone" + String(repeating: "x", count: maxDeviceName - 5))
+        let pk = try dev.keys.publicKeys()
+        func signedCard(_ edit: (inout DeviceCard) -> Void) throws -> Envelope {
+            var c = DeviceCard(v: protocolVersion, deviceId: pk.deviceID, name: "phone", approveKey: B64.encode(pk.approve),
+                               denyKey: B64.encode(pk.deny), encKey: B64.encode(pk.enc), createdAt: 1)
+            edit(&c)
+            let p = try Coders.encoder.encode(c)
+            return Envelope(alg: Envelope.es256, kid: pk.deviceID, payload: B64.encode(p),
+                            sig: B64.encode(try dev.keys.signApprove(p, pin: nil)))
+        }
+        XCTAssertNoThrow(try verifyCard(try signedCard { _ in }))
+        XCTAssertThrowsError(try verifyCard(try signedCard { $0.name = "phone\u{202E}" }))
+        XCTAssertThrowsError(try verifyCard(try signedCard { $0.name = String(repeating: "n", count: maxDeviceName + 1) }))
+        XCTAssertThrowsError(try verifyCard(try signedCard { $0.t = PayloadType.roster }))
     }
 
     func testSanitize() {

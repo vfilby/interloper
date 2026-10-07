@@ -20,6 +20,8 @@ import (
 	"math/big"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 const Version = 1
@@ -31,6 +33,77 @@ const (
 	AlgEd25519 = "ed25519"
 	AlgES256   = "es256"
 )
+
+// Payload types: every signed payload says what it is in its "t" field, and every verifier checks it. Field checks
+// alone would also keep one kind from passing for another today, but only by accident of which fields each has.
+const (
+	TypeRecord   = "record"   // adapter key
+	TypeAck      = "ack"      // adapter key
+	TypeDecision = "decision" // device approve or deny key
+	TypeCard     = "card"     // device approve key
+	TypeRoster   = "roster"   // device approve key
+)
+
+// MaxDeviceName is the longest device name a card may carry, in bytes.
+const MaxDeviceName = 100
+
+// ValidDeviceName reports whether a card's name is acceptable: valid UTF-8, at most MaxDeviceName bytes, and no
+// control, format (bidi overrides, zero-width), line or paragraph separator characters. It is shown when a join is
+// approved and written into the service's deny reason.
+func ValidDeviceName(s string) bool {
+	if len(s) > MaxDeviceName || !utf8.ValidString(s) {
+		return false
+	}
+	for _, r := range s {
+		if unicode.In(r, unicode.Cc, unicode.Cf, unicode.Zl, unicode.Zp) {
+			return false
+		}
+	}
+	return true
+}
+
+// CleanDeviceName makes a name ValidDeviceName accepts: those characters dropped (tabs and line breaks become spaces),
+// runs of white space collapsed, and cut to MaxDeviceName bytes on a character boundary.
+func CleanDeviceName(s string) string {
+	s = strings.Map(func(r rune) rune {
+		switch {
+		case r == '\t' || r == '\n' || r == '\r' || unicode.In(r, unicode.Zl, unicode.Zp):
+			return ' '
+		case r == utf8.RuneError || unicode.In(r, unicode.Cc, unicode.Cf):
+			return -1
+		}
+		return r
+	}, strings.ToValidUTF8(s, ""))
+	return truncate(strings.Join(strings.Fields(s), " "), MaxDeviceName)
+}
+
+// CleanText makes requester-written text fit for a record: C0 and C1 controls and U+2028/U+2029 removed (tabs and line
+// breaks become spaces), invalid UTF-8 dropped, and cut to max bytes on a character boundary. Other characters, bidi
+// controls included, are left to the app, which sanitizes everything it shows.
+func CleanText(s string, max int) string {
+	s = strings.Map(func(r rune) rune {
+		switch {
+		case r == '\t' || r == '\n' || r == '\r' || r == '\u2028' || r == '\u2029':
+			return ' '
+		case unicode.Is(unicode.Cc, r):
+			return -1
+		}
+		return r
+	}, strings.ToValidUTF8(s, ""))
+	return truncate(s, max)
+}
+
+// truncate cuts s to at most max bytes without splitting a character.
+func truncate(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	i := max
+	for i > 0 && !utf8.RuneStart(s[i]) {
+		i--
+	}
+	return s[:i]
+}
 
 var b64 = base64.RawURLEncoding
 
@@ -118,6 +191,7 @@ const (
 
 // Record is what the person is asked to decide on.
 type Record struct {
+	T          string     `json:"t"` // TypeRecord
 	V          int        `json:"v"`
 	ID         string     `json:"id"`
 	Adapter    string     `json:"adapter"`
@@ -141,7 +215,9 @@ const (
 )
 
 type Decision struct {
+	T          string `json:"t"` // TypeDecision
 	V          int    `json:"v"`
+	User       string `json:"user"` // the user whose roster the device is on
 	RequestID  string `json:"request_id"`
 	Adapter    string `json:"adapter"`
 	Decision   string `json:"decision"`
@@ -160,6 +236,7 @@ const (
 )
 
 type Ack struct {
+	T            string `json:"t"` // TypeAck
 	V            int    `json:"v"`
 	RequestID    string `json:"request_id"`
 	Adapter      string `json:"adapter"`
@@ -171,6 +248,7 @@ type Ack struct {
 
 // DeviceCard is a device's public keys, signed with its approve key.
 type DeviceCard struct {
+	T          string `json:"t"` // TypeCard
 	V          int    `json:"v"`
 	DeviceID   string `json:"device_id"`
 	Name       string `json:"name"`
@@ -324,9 +402,54 @@ func Open(key *ecdh.PrivateKey, s Sealed) (Envelope, error) {
 	return e, json.Unmarshal(pt, &e)
 }
 
+// ---- verification of what an adapter sends ----
+
+// VerifyRecord checks a record envelope against the pinned key of the adapter it claims and returns the record with
+// its exact payload bytes (the decision's record_hash covers these).
+func VerifyRecord(e Envelope, adapterKey ed25519.PublicKey) (Record, []byte, error) {
+	var r Record
+	p, err := VerifyEd25519(e, adapterKey)
+	if err != nil {
+		return r, nil, fmt.Errorf("record from %s: %w", e.Kid, err)
+	}
+	if err := json.Unmarshal(p, &r); err != nil {
+		return r, nil, fmt.Errorf("record: %w", err)
+	}
+	switch {
+	case r.T != TypeRecord:
+		return r, nil, fmt.Errorf("payload is a %q, not a record", r.T)
+	case r.V != Version:
+		return r, nil, fmt.Errorf("record version %d", r.V)
+	case r.Adapter != e.Kid:
+		return r, nil, errors.New("record names another adapter than its signer")
+	}
+	return r, p, nil
+}
+
+// VerifyAck checks an ack envelope against the pinned key of the adapter it claims.
+func VerifyAck(e Envelope, adapterKey ed25519.PublicKey) (Ack, error) {
+	var a Ack
+	p, err := VerifyEd25519(e, adapterKey)
+	if err != nil {
+		return a, err
+	}
+	if err := json.Unmarshal(p, &a); err != nil {
+		return a, fmt.Errorf("ack: %w", err)
+	}
+	switch {
+	case a.T != TypeAck:
+		return a, fmt.Errorf("payload is a %q, not an ack", a.T)
+	case a.V != Version:
+		return a, fmt.Errorf("ack version %d", a.V)
+	case a.Adapter != e.Kid:
+		return a, fmt.Errorf("ack names adapter %q but is signed by %q", a.Adapter, e.Kid)
+	}
+	return a, nil
+}
+
 // ---- verification of what a device sends ----
 
-// VerifyCard checks a device card's self-signature and that the id matches its approve key.
+// VerifyCard checks a device card's self-signature, that the id matches its approve key, and its name.
 func VerifyCard(e Envelope) (DeviceCard, error) {
 	var c DeviceCard
 	p, err := UnB64(e.Payload)
@@ -343,8 +466,14 @@ func VerifyCard(e Envelope) (DeviceCard, error) {
 	if _, err := VerifyES256(e, ak); err != nil {
 		return c, fmt.Errorf("card: %w", err)
 	}
+	if c.T != TypeCard {
+		return c, fmt.Errorf("card: payload is a %q, not a card", c.T)
+	}
 	if c.V != Version || c.DeviceID != DeviceID(ak) || e.Kid != c.DeviceID {
 		return c, errors.New("card: version, device id and approve key do not match")
+	}
+	if !ValidDeviceName(c.Name) {
+		return c, fmt.Errorf("card: device name longer than %d bytes or with control or format characters", MaxDeviceName)
 	}
 	for _, k := range []string{c.DenyKey, c.EncKey} {
 		raw, err := UnB64(k)
@@ -358,10 +487,15 @@ func VerifyCard(e Envelope) (DeviceCard, error) {
 	return c, nil
 }
 
+// ErrOtherUser is VerifyDecisionSignature's error for a decision that names another user than the one whose roster
+// the device was found on.
+var ErrOtherUser = errors.New("decision names another user")
+
 // VerifyDecisionSignature checks what can be checked of a decision without the record: the signature against the
-// device card (approve needs the approve key; deny accepts either), the version, and that it names this device, adapter
-// and request. The hub uses it to refuse junk; VerifyDecision builds on it.
-func VerifyDecisionSignature(e Envelope, card DeviceCard, adapter, requestID string) (Decision, error) {
+// device card (approve needs the approve key; deny accepts either), the type and version, and that it names this
+// user, device, adapter and request. user is the user on whose roster the card was found. The hub uses it to refuse
+// junk; VerifyDecision builds on it.
+func VerifyDecisionSignature(e Envelope, card DeviceCard, user, adapter, requestID string) (Decision, error) {
 	var d Decision
 	if e.Kid != card.DeviceID {
 		return d, errors.New("decision signed by a different device than claimed")
@@ -380,10 +514,14 @@ func VerifyDecisionSignature(e Envelope, card DeviceCard, adapter, requestID str
 		return d, fmt.Errorf("decision: %w", err)
 	}
 	switch {
+	case d.T != TypeDecision:
+		return d, fmt.Errorf("payload is a %q, not a decision", d.T)
 	case d.V != Version:
 		return d, fmt.Errorf("decision version %d", d.V)
 	case d.DeviceID != card.DeviceID:
 		return d, errors.New("decision names another device")
+	case d.User != user:
+		return d, fmt.Errorf("%w (%q), not %s, on whose roster the device is", ErrOtherUser, d.User, user)
 	case d.Adapter != adapter:
 		return d, fmt.Errorf("decision is for adapter %q", d.Adapter)
 	case d.RequestID != requestID:
@@ -396,10 +534,10 @@ func VerifyDecisionSignature(e Envelope, card DeviceCard, adapter, requestID str
 	return d, nil
 }
 
-// VerifyDecision checks a decision envelope against a pinned device card and the record it answers. It does not
-// check nonce reuse or the service's state: that is the adapter's job.
-func VerifyDecision(e Envelope, card DeviceCard, adapter string, recordPayload []byte, rec Record, now time.Time) (Decision, error) {
-	d, err := VerifyDecisionSignature(e, card, adapter, rec.ID)
+// VerifyDecision checks a decision envelope against a pinned device card, the user on whose roster that card is, and
+// the record it answers. It does not check nonce reuse or the service's state: that is the adapter's job.
+func VerifyDecision(e Envelope, card DeviceCard, user, adapter string, recordPayload []byte, rec Record, now time.Time) (Decision, error) {
+	d, err := VerifyDecisionSignature(e, card, user, adapter, rec.ID)
 	if err != nil {
 		return d, err
 	}
