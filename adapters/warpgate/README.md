@@ -18,8 +18,8 @@ From the environment (`deploy/adapter.env.default`, copied once to `/opt/interpo
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `HUB_URL` | (required) | the hub's API base URL as the adapter reaches it |
-| `WARPGATE_URL` | (required) | Warpgate's base URL |
+| `HUB_URL` | (required) | the hub's API base URL as the adapter reaches it; https (plain http only to a loopback address) |
+| `WARPGATE_URL` | (required) | Warpgate's base URL; https (plain http only to a loopback address) |
 | `WARPGATE_TOKEN_FILE` | `/run/secrets/warpgate-token` | the approver token |
 | `ALLOWED_REQUESTERS` | (required) | Warpgate usernames that may ask for tickets, comma-separated; others are denied |
 | `MAX_DURATION_RW`, `MAX_DURATION_ADMIN` | `2h` | longer tickets are denied without asking; so are requests with no duration, ≤ 0 s, or over 30 days whatever these say |

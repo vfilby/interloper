@@ -179,6 +179,9 @@ func (c *cmd) run(args []string) error {
 	if *id == "" {
 		return errors.New("-id is required")
 	}
+	if err := adapter.CheckURL("-hub", *hubURL); err != nil {
+		return err
+	}
 	build, ok := builders[*source]
 	if !ok {
 		return fmt.Errorf("unknown source %q (this binary has: %s)", *source, strings.Join(names, ", "))
@@ -214,6 +217,9 @@ func (c *cmd) run(args []string) error {
 		src, &adapter.HubClient{Base: *hubURL, Token: strings.TrimSpace(string(tok))}, trust, a, log)
 	if err != nil {
 		return err
+	}
+	for _, err := range trust.Dropped {
+		log.Warn("trusted users", "err", err)
 	}
 	pub := key.Public().(ed25519.PublicKey)
 	log.Info("started", "source", *source, "hub", *hubURL, "key", protocol.Fingerprint(pub), "trusted_devices", len(trust.Cards()))

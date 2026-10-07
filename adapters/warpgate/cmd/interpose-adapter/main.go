@@ -24,11 +24,11 @@ import (
 
 func main() {
 	cli.Main("interpose-adapter", cli.Source{Name: "warpgate", Flags: func(*flag.FlagSet) func(context.Context, *slog.Logger) (adapter.Source, error) {
-		return func(context.Context, *slog.Logger) (adapter.Source, error) { return warpgateSource() }
+		return func(_ context.Context, log *slog.Logger) (adapter.Source, error) { return warpgateSource(log) }
 	}})
 }
 
-func warpgateSource() (*warpgate.Source, error) {
+func warpgateSource(log *slog.Logger) (*warpgate.Source, error) {
 	get := func(k, def string) string {
 		if v := strings.TrimSpace(os.Getenv(k)); v != "" {
 			return v
@@ -39,6 +39,9 @@ func warpgateSource() (*warpgate.Source, error) {
 	base := get("WARPGATE_URL", "")
 	if base == "" {
 		return nil, errors.New("WARPGATE_URL is required (the Warpgate base URL, e.g. https://bastion.example)")
+	}
+	if err := adapter.CheckURL("WARPGATE_URL", base); err != nil {
+		return nil, err
 	}
 	tok, err := os.ReadFile(get("WARPGATE_TOKEN_FILE", "/run/secrets/warpgate-token"))
 	if err != nil {
@@ -69,5 +72,6 @@ func warpgateSource() (*warpgate.Source, error) {
 		WG: wgapi.New(base, strings.TrimSpace(string(tok)), nil),
 		Policy: policy.Policy{Requesters: reqs, TTL: ttl,
 			MaxDuration: map[policy.Tier]time.Duration{policy.TierRW: rw, policy.TierAdmin: adm}},
+		Log: log,
 	}, nil
 }
