@@ -1,7 +1,9 @@
 #!/bin/bash
 # install.sh: install or update the mail adapter in /opt/interpose-adapter-mailpit, on the Mailpit host.
 # Runbook: adapters/mailpit/README.md. Run it from the directory the deploy files were copied to:
-#   cd ~/adapter-mailpit-staging && sudo ./install.sh [sha256]
+#   cd ~/adapter-mailpit-staging && sudo ./install.sh [--instance NAME] [sha256]
+# --instance NAME: a second adapter for a second Mailpit on the same host, in /opt/interpose-adapter-mailpit-NAME (its
+# own compose project, settings, login and keys). Give the same --instance again to update it.
 # With the sha256 that `make dist-adapter-mailpit` printed, the binary is checked against it without asking. A binary
 # already confirmed once is not asked about again.
 #
@@ -10,7 +12,13 @@
 # it is also the update command. Only real problems stop it, marked ERROR.
 set -euo pipefail
 
-DEST=/opt/interpose-adapter-mailpit
+inst=''
+if [ "${1:-}" = --instance ]; then
+  inst=${2:-}
+  [[ $inst =~ ^[a-z0-9][a-z0-9-]{0,30}$ ]] || { echo "--instance NAME: lowercase letters, digits and -" >&2; exit 1; }
+  shift 2
+fi
+DEST=/opt/interpose-adapter-mailpit${inst:+-$inst}
 CUID=65534 # the container's user (compose.yaml)
 HERE=$(cd "$(dirname "$0")" && pwd)
 SVC=adapter-mailpit
@@ -47,7 +55,8 @@ mailpit_status() {
   curl -s -o /dev/null -w '%{http_code}' --max-time 10 -K - "$(envget MAILPIT_URL)/api/v1/info" <<<"user = \"$(envget MAILPIT_USER):$(cat "$DEST/secrets/mailpit-password")\""
 }
 
-[ "$(id -u)" = 0 ] || fail "run it with sudo: cd $HERE && sudo ./install.sh"
+RUN="sudo ./install.sh${inst:+ --instance $inst}"
+[ "$(id -u)" = 0 ] || fail "run it with sudo: cd $HERE && $RUN"
 [ -t 0 ] || fail "run it in an interactive terminal: it asks for values along the way"
 for f in Dockerfile compose.yaml "$BIN" adapter.env.default; do
   [ -f "$HERE/$f" ] || fail "$HERE/$f is missing. Copy all of adapters/mailpit/deploy/ here after running make dist-adapter-mailpit."
@@ -76,6 +85,8 @@ install -d -m 0755 -o root -g root "$DEST"
 if [ ! -f "$DEST/.env" ]; then
   if [ -f "$HERE/.env" ]; then src="$HERE/.env"; else src="$HERE/adapter.env.default"; fi
   install -m 0644 -o root -g root "$src" "$DEST/.env"
+  # A new instance from the defaults gets its own adapter id; MAILPIT_URL and MAILPIT_USER still need checking.
+  if [ -n "$inst" ] && [ "$src" = "$HERE/adapter.env.default" ]; then sed -i "s/^ADAPTER_ID=.*/ADAPTER_ID=mail-$inst/" "$DEST/.env"; fi
 fi
 hub=$(envget HUB_URL)
 if [[ $hub == *home.example* || -z $hub ]]; then

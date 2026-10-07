@@ -4,12 +4,13 @@
 # It holds what can act: a Mailpit login (which can release held mail) and the trust list (which accounts' phones may
 # decide). It only connects out: to the hub (HUB_URL) and to Mailpit's API (MAILPIT_URL). Settings: .env (install.sh
 # creates it once from adapter.env.default and never overwrites it).
-name: interpose-adapter-mailpit
+#
+# No `name:` or `image:`: the project and image are named after the directory, so a second instance
+# (install.sh --instance NAME, in /opt/interpose-adapter-mailpit-NAME) is a separate project with its own container.
 
 services:
   adapter-mailpit:
     build: .
-    image: interpose-adapter-mailpit:local
     restart: unless-stopped
     # Host network: Mailpit's API usually listens where a firewall admits only the reverse proxy, and loopback is the
     # one address that always works. The adapter itself listens on nothing.
